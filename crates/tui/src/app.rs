@@ -2,12 +2,13 @@ use std::path::PathBuf;
 
 use tuigotchi_core::{
     action::{self, Action, ALL_ACTIONS},
+    combat::{combat_profile::CombatProfile, explore_state::ExploreState},
     event::{EventBus, GameEvent},
     game_state::GameMode,
-    offline,
+    offline::{self, OfflineCombatContext},
     pet::Pet,
     save::{self, SaveData},
-    tick,
+    tick::{self, CombatContext},
 };
 
 pub struct App {
@@ -18,6 +19,8 @@ pub struct App {
     pub running: bool,
     pub save_path: PathBuf,
     pub game_mode: GameMode,
+    pub combat_profile: CombatProfile,
+    pub explore_state: ExploreState,
 }
 
 impl App {
@@ -30,6 +33,8 @@ impl App {
             running: true,
             save_path,
             game_mode: GameMode::default(),
+            combat_profile: CombatProfile::new(),
+            explore_state: ExploreState::default(),
         }
     }
 
@@ -38,6 +43,8 @@ impl App {
         let mut pet = data.pet;
         let mut events = EventBus::new();
         let game_mode = data.game_mode;
+        let mut combat_profile = data.combat_profile.unwrap_or_default();
+        let mut explore_state = data.explore_state.unwrap_or_default();
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -45,7 +52,16 @@ impl App {
             .unwrap_or(0);
 
         let elapsed = now.saturating_sub(data.last_saved_at);
-        let summary = offline::simulate_offline(&mut pet, elapsed, &mut events);
+        let summary = offline::simulate_offline(
+            &mut pet,
+            elapsed,
+            &mut events,
+            Some(&mut OfflineCombatContext {
+                profile: &mut combat_profile,
+                explore_state: &mut explore_state,
+                game_mode,
+            }),
+        );
         let status_message = if elapsed > 60 {
             Some(summary.message())
         } else {
@@ -60,6 +76,8 @@ impl App {
             running: true,
             save_path,
             game_mode,
+            combat_profile,
+            explore_state,
         }
     }
 
@@ -70,7 +88,13 @@ impl App {
             .map(|d| d.as_secs())
             .unwrap_or(0);
 
-        let data = SaveData::new(self.pet.clone(), now, self.game_mode);
+        let data = SaveData::new(
+            self.pet.clone(),
+            now,
+            self.game_mode,
+            Some(self.combat_profile.clone()),
+            Some(self.explore_state.clone()),
+        );
         save::save(&data, &self.save_path)
     }
 
@@ -121,12 +145,35 @@ impl App {
     }
 
     pub fn tick(&mut self, elapsed_secs: u64) {
-        tick::tick(
-            &mut self.pet,
-            elapsed_secs,
-            &mut self.events,
-            self.game_mode,
-        );
+        let combat_ctx = if self.game_mode == GameMode::Explore {
+            Some(CombatContext {
+                profile: &mut self.combat_profile,
+                explore_state: &mut self.explore_state,
+            })
+        } else {
+            None
+        };
+
+        // We need to reborrow to satisfy the borrow checker with the mutable ref
+        // to self.events while combat_ctx borrows other fields.
+        if let Some(mut ctx) = combat_ctx {
+            tick::tick(
+                &mut self.pet,
+                elapsed_secs,
+                &mut self.events,
+                self.game_mode,
+                Some(&mut ctx),
+            );
+        } else {
+            tick::tick(
+                &mut self.pet,
+                elapsed_secs,
+                &mut self.events,
+                self.game_mode,
+                None,
+            );
+        }
+
         self.process_events();
     }
 
@@ -153,6 +200,18 @@ impl App {
                     self.game_mode = GameMode::Camp;
                     self.status_message =
                         Some(format!("{} was forced back to camp!", self.pet.name));
+                }
+                GameEvent::BattleWon {
+                    xp_earned,
+                    enemy_name,
+                } => {
+                    self.status_message = Some(format!("Defeated {enemy_name}! +{xp_earned} XP"));
+                }
+                GameEvent::BattleLost { enemy_name } => {
+                    self.status_message = Some(format!("Lost to {enemy_name}... but survived!"));
+                }
+                GameEvent::LeveledUp { new_level } => {
+                    self.status_message = Some(format!("Level up! Now level {new_level}!"));
                 }
                 GameEvent::EnteredExplore | GameEvent::EnteredCamp => {}
                 _ => {}

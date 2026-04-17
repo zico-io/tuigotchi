@@ -1,5 +1,5 @@
 [package]
-name = "tuigotchi-core"
+name = "tuigotchi-combat"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,10 +7,8 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Core game logic for tuigotchi — no TUI dependencies"
+description = "Combat system for tuigotchi — enemies, battles, leveling"
 
 [dependencies]
 serde.workspace = true
-serde_json.workspace = true
-tuigotchi-combat.workspace = true
 rand.workspace = true
