@@ -27,7 +27,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     match app.game_mode {
         GameMode::Camp => draw_actions(frame, chunks[3], app),
-        GameMode::Explore => draw_explore(frame, chunks[3]),
+        GameMode::Explore => draw_explore(frame, chunks[3], app),
         _ => draw_actions(frame, chunks[3], app),
     }
 
@@ -47,9 +47,10 @@ fn draw_title(frame: &mut Frame, area: Rect, app: &App) {
         ""
     };
 
+    let level = app.combat_profile.level();
     let title = format!(
-        " {} — {:?} (age: {}s) [{}]{} ",
-        app.pet.name, app.pet.stage, app.pet.age_seconds, mode_label, needs_care
+        " {} — {:?} (age: {}s) [{}] Lv.{}{} ",
+        app.pet.name, app.pet.stage, app.pet.age_seconds, mode_label, level, needs_care
     );
     let block = Block::default()
         .title(title)
@@ -86,6 +87,7 @@ fn draw_stats(frame: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
+            Constraint::Length(1), // XP bar
         ])
         .split(inner);
 
@@ -103,6 +105,25 @@ fn draw_stats(frame: &mut Frame, area: Rect, app: &App) {
             .gauge_style(Style::default().fg(*color));
         frame.render_widget(gauge, stat_chunks[i]);
     }
+
+    // XP bar
+    let xp = app.combat_profile.xp();
+    let xp_next = app.combat_profile.xp_to_next();
+    let xp_ratio = if xp_next > 0 {
+        (xp as f64 / xp_next as f64).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let xp_gauge = Gauge::default()
+        .label(format!(
+            "XP: {}/{} (Lv.{})",
+            xp,
+            xp_next,
+            app.combat_profile.level()
+        ))
+        .ratio(xp_ratio)
+        .gauge_style(Style::default().fg(Color::Magenta));
+    frame.render_widget(xp_gauge, stat_chunks[4]);
 }
 
 fn draw_actions(frame: &mut Frame, area: Rect, app: &App) {
@@ -134,13 +155,28 @@ fn draw_actions(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(paragraph, area);
 }
 
-fn draw_explore(frame: &mut Frame, area: Rect) {
-    let text = Line::from(vec![Span::styled(
-        "Exploring... (Tab to return to camp)",
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD),
-    )]);
+fn draw_explore(frame: &mut Frame, area: Rect, app: &App) {
+    let battle_log = app
+        .explore_state
+        .last_battle_log
+        .as_deref()
+        .unwrap_or("Exploring...");
+
+    let wins = app.explore_state.battles_won;
+    let text = Line::from(vec![
+        Span::styled(
+            format!("W:{wins} "),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            battle_log,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
 
     let paragraph = Paragraph::new(text).block(
         Block::default()

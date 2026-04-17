@@ -1,3 +1,10 @@
+use tuigotchi_combat::{
+    battle::{self, BattleResult},
+    combat_profile::CombatProfile,
+    enemy,
+    explore_state::ExploreState,
+};
+
 use crate::{
     event::{EventBus, GameEvent},
     game_state::GameMode,
@@ -9,9 +16,21 @@ const HUNGER_RATE: f32 = 0.0035;
 const HAPPINESS_RATE: f32 = 0.0021;
 const ENERGY_RATE: f32 = 0.0014;
 
+/// Bundles mutable references to combat state for the tick function.
+pub struct CombatContext<'a> {
+    pub profile: &'a mut CombatProfile,
+    pub explore_state: &'a mut ExploreState,
+}
+
 /// Advance the pet's state by `elapsed` seconds.
 /// Returns any game events that occurred during the tick.
-pub fn tick(pet: &mut Pet, elapsed: u64, events: &mut EventBus, game_mode: GameMode) {
+pub fn tick(
+    pet: &mut Pet,
+    elapsed: u64,
+    events: &mut EventBus,
+    game_mode: GameMode,
+    combat: Option<&mut CombatContext<'_>>,
+) {
     if !pet.alive {
         return;
     }
@@ -46,7 +65,11 @@ pub fn tick(pet: &mut Pet, elapsed: u64, events: &mut EventBus, game_mode: GameM
             // Camp: decay only (already applied above)
         }
         GameMode::Explore => {
-            // TODO: Phase 3 — combat tick, random encounters
+            if let Some(ctx) = combat {
+                if !pet.needs_care {
+                    run_combat_tick(pet, events, ctx);
+                }
+            }
         }
         _ => {}
     }
@@ -78,6 +101,57 @@ pub fn tick(pet: &mut Pet, elapsed: u64, events: &mut EventBus, game_mode: GameM
     }
 }
 
+/// Run a single combat encounter during an explore tick.
+fn run_combat_tick(pet: &Pet, events: &mut EventBus, ctx: &mut CombatContext<'_>) {
+    let mut rng = rand::thread_rng();
+    let level = ctx.profile.level();
+    let foe = enemy::generate_enemy(level, &mut rng);
+    let stats = battle::derive_combat_stats(
+        pet.stats.happiness,
+        pet.stats.energy,
+        pet.stats.health,
+        level,
+    );
+
+    let result = battle::resolve_auto_battle(&stats, &foe, &mut rng);
+
+    match result {
+        BattleResult::Victory {
+            xp_earned,
+            damage_taken,
+        } => {
+            ctx.explore_state.battles_won += 1;
+            ctx.explore_state.total_xp_earned += xp_earned;
+            ctx.explore_state.last_battle_log = Some(format!(
+                "Defeated {}! +{} XP (took {:.0} damage)",
+                foe.name, xp_earned, damage_taken,
+            ));
+
+            events.push(GameEvent::BattleWon {
+                xp_earned,
+                enemy_name: foe.name,
+            });
+
+            if ctx.profile.add_xp(xp_earned) {
+                events.push(GameEvent::LeveledUp {
+                    new_level: ctx.profile.level(),
+                });
+            }
+        }
+        BattleResult::Defeat { damage_taken } => {
+            ctx.explore_state.battles_lost += 1;
+            ctx.explore_state.last_battle_log = Some(format!(
+                "Lost to {} (took {:.0} damage)",
+                foe.name, damage_taken,
+            ));
+
+            events.push(GameEvent::BattleLost {
+                enemy_name: foe.name,
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,7 +164,7 @@ mod tests {
         let mut events = EventBus::new();
 
         let hunger_before = pet.stats.hunger;
-        tick(&mut pet, 1000, &mut events, GameMode::Camp);
+        tick(&mut pet, 1000, &mut events, GameMode::Camp, None);
 
         assert!(pet.stats.hunger > hunger_before);
         assert!(pet.stats.happiness < 50.0);
@@ -106,7 +180,7 @@ mod tests {
         let mut events = EventBus::new();
 
         // Push hunger past 90 threshold
-        tick(&mut pet, 1000, &mut events, GameMode::Camp);
+        tick(&mut pet, 1000, &mut events, GameMode::Camp, None);
 
         assert!(pet.alive); // no death from starvation in v2
         assert!(pet.needs_care);
@@ -124,7 +198,7 @@ mod tests {
         let mut events = EventBus::new();
 
         // After 1 hour (3600s), stats should have changed modestly
-        tick(&mut pet, 3600, &mut events, GameMode::Camp);
+        tick(&mut pet, 3600, &mut events, GameMode::Camp, None);
 
         // Hunger: 50 + 0.0035 * 3600 = 62.6
         assert!((pet.stats.hunger - 62.6).abs() < 0.1);
@@ -143,7 +217,7 @@ mod tests {
         pet.age_seconds = 29;
         let mut events = EventBus::new();
 
-        tick(&mut pet, 1, &mut events, GameMode::Camp);
+        tick(&mut pet, 1, &mut events, GameMode::Camp, None);
 
         assert_eq!(pet.stage, PetStage::Baby);
         assert!(events
@@ -161,7 +235,7 @@ mod tests {
         let mut events = EventBus::new();
 
         // Push hunger past 90 threshold while exploring
-        tick(&mut pet, 1000, &mut events, GameMode::Explore);
+        tick(&mut pet, 1000, &mut events, GameMode::Explore, None);
 
         assert!(pet.needs_care);
         let drained = events.drain();
@@ -177,9 +251,42 @@ mod tests {
         let mut events = EventBus::new();
 
         let hunger_before = pet.stats.hunger;
-        tick(&mut pet, 100, &mut events, GameMode::Explore);
+        tick(&mut pet, 100, &mut events, GameMode::Explore, None);
 
         // Decay still applies in Explore mode
         assert!(pet.stats.hunger > hunger_before);
+    }
+
+    #[test]
+    fn explore_with_combat_produces_battle_events() {
+        let mut pet = Pet::new("Test");
+        pet.stage = PetStage::Adult;
+        pet.age_seconds = 600;
+        let mut events = EventBus::new();
+        let mut profile = CombatProfile::new();
+        let mut explore = ExploreState::default();
+
+        tick(
+            &mut pet,
+            1,
+            &mut events,
+            GameMode::Explore,
+            Some(&mut CombatContext {
+                profile: &mut profile,
+                explore_state: &mut explore,
+            }),
+        );
+
+        let drained = events.drain();
+        // Should have at least one battle event (won or lost)
+        let has_battle = drained.iter().any(|e| {
+            matches!(
+                e,
+                GameEvent::BattleWon { .. } | GameEvent::BattleLost { .. }
+            )
+        });
+        assert!(has_battle);
+        assert!(explore.battles_won + explore.battles_lost > 0);
+        assert!(explore.last_battle_log.is_some());
     }
 }

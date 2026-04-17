@@ -1,6 +1,7 @@
 use std::{fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
+use tuigotchi_combat::{combat_profile::CombatProfile, explore_state::ExploreState};
 
 use crate::{game_state::GameMode, pet::Pet};
 
@@ -17,15 +18,29 @@ pub struct SaveData {
     /// Active game mode at time of save (defaults to Camp for old saves).
     #[serde(default)]
     pub game_mode: GameMode,
+    /// Combat profile (level, XP). None for pre-combat saves.
+    #[serde(default)]
+    pub combat_profile: Option<CombatProfile>,
+    /// Explore session statistics. None for pre-combat saves.
+    #[serde(default)]
+    pub explore_state: Option<ExploreState>,
 }
 
 impl SaveData {
-    pub fn new(pet: Pet, now: u64, game_mode: GameMode) -> Self {
+    pub fn new(
+        pet: Pet,
+        now: u64,
+        game_mode: GameMode,
+        combat_profile: Option<CombatProfile>,
+        explore_state: Option<ExploreState>,
+    ) -> Self {
         Self {
             version: SAVE_VERSION,
             pet,
             last_saved_at: now,
             game_mode,
+            combat_profile,
+            explore_state,
         }
     }
 }
@@ -102,7 +117,7 @@ mod tests {
         let _ = fs::remove_dir(&dir);
 
         let pet = Pet::new("TestPet");
-        let data = SaveData::new(pet.clone(), 1000, GameMode::default());
+        let data = SaveData::new(pet.clone(), 1000, GameMode::default(), None, None);
 
         save(&data, &path).expect("save should succeed");
         let loaded = load(&path).expect("load should succeed");

@@ -22,6 +22,12 @@ pub enum GameEvent {
     EnteredCamp,
     /// The pet was forced back to Camp (needs care while exploring).
     ForcedCamp,
+    /// Won an auto-battle.
+    BattleWon { xp_earned: u32, enemy_name: String },
+    /// Lost an auto-battle (non-lethal in explore).
+    BattleLost { enemy_name: String },
+    /// Leveled up!
+    LeveledUp { new_level: u32 },
 }
 
 /// Simple event collector. Gather events during a tick, drain after processing.

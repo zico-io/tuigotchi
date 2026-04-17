@@ -1,5 +1,8 @@
+use tuigotchi_combat::{combat_profile::CombatProfile, explore_state::ExploreState};
+
 use crate::{
     event::{EventBus, GameEvent},
+    game_state::GameMode,
     pet::Pet,
 };
 
@@ -7,6 +10,13 @@ use crate::{
 const HUNGER_RATE: f32 = 0.0035;
 const HAPPINESS_RATE: f32 = 0.0021;
 const ENERGY_RATE: f32 = 0.0014;
+
+/// Optional combat state for offline simulation.
+pub struct OfflineCombatContext<'a> {
+    pub profile: &'a mut CombatProfile,
+    pub explore_state: &'a mut ExploreState,
+    pub game_mode: GameMode,
+}
 
 /// Simulate elapsed offline time analytically (no second-by-second loop).
 ///
@@ -16,6 +26,7 @@ pub fn simulate_offline(
     pet: &mut Pet,
     elapsed_seconds: u64,
     events: &mut EventBus,
+    combat: Option<&mut OfflineCombatContext<'_>>,
 ) -> OfflineSummary {
     if !pet.alive || elapsed_seconds == 0 {
         return OfflineSummary::default();
@@ -68,6 +79,34 @@ pub fn simulate_offline(
         events.push(GameEvent::NeedsCare);
     }
 
+    // Offline combat simulation
+    if let Some(ctx) = combat {
+        if ctx.game_mode == GameMode::Explore {
+            let level = ctx.profile.level();
+            let avg_xp = 10 + level * 2;
+            // 1 battle per second offline, cap at a reasonable amount
+            let battles = elapsed_seconds.min(28800) as u32; // cap at 8 hours
+            let total_xp = battles * avg_xp;
+
+            ctx.explore_state.battles_won += battles;
+            ctx.explore_state.total_xp_earned += total_xp;
+
+            let level_before = ctx.profile.level();
+            ctx.profile.add_xp(total_xp);
+            let level_after = ctx.profile.level();
+
+            summary.battles_won = battles;
+            summary.xp_earned = total_xp;
+            summary.levels_gained = level_after - level_before;
+
+            if summary.levels_gained > 0 {
+                events.push(GameEvent::LeveledUp {
+                    new_level: level_after,
+                });
+            }
+        }
+    }
+
     summary
 }
 
@@ -79,6 +118,9 @@ pub struct OfflineSummary {
     pub happiness_change: f32,
     pub energy_change: f32,
     pub evolutions: u32,
+    pub battles_won: u32,
+    pub xp_earned: u32,
+    pub levels_gained: u32,
 }
 
 impl OfflineSummary {
@@ -107,6 +149,21 @@ impl OfflineSummary {
             ));
         }
 
+        if self.battles_won > 0 {
+            parts.push(format!(
+                "Won {} battles, earned {} XP.",
+                self.battles_won, self.xp_earned,
+            ));
+        }
+
+        if self.levels_gained > 0 {
+            parts.push(format!(
+                "Gained {} level{}!",
+                self.levels_gained,
+                if self.levels_gained > 1 { "s" } else { "" }
+            ));
+        }
+
         parts.join(" ")
     }
 }
@@ -123,7 +180,7 @@ mod tests {
         pet.age_seconds = 600;
         let mut events = EventBus::new();
 
-        let summary = simulate_offline(&mut pet, 3600, &mut events);
+        let summary = simulate_offline(&mut pet, 3600, &mut events, None);
 
         // Hunger: 50 + 0.0035 * 3600 = 62.6
         assert!((pet.stats.hunger - 62.6).abs() < 0.1);
@@ -141,7 +198,7 @@ mod tests {
         let mut events = EventBus::new();
 
         // 2000s of hunger at 0.0035/s = +7.0 → 92.0 >= 90 threshold
-        simulate_offline(&mut pet, 2000, &mut events);
+        simulate_offline(&mut pet, 2000, &mut events, None);
 
         assert!(pet.needs_care);
         assert!(events
@@ -159,7 +216,7 @@ mod tests {
 
         // 500 seconds should evolve Egg→Baby (30s) and Baby→Teen (120s)
         // and Teen→Adult (300s)
-        let summary = simulate_offline(&mut pet, 500, &mut events);
+        let summary = simulate_offline(&mut pet, 500, &mut events, None);
 
         assert_eq!(pet.stage, PetStage::Adult);
         assert_eq!(summary.evolutions, 3);
@@ -171,7 +228,7 @@ mod tests {
         let hunger_before = pet.stats.hunger;
         let mut events = EventBus::new();
 
-        simulate_offline(&mut pet, 0, &mut events);
+        simulate_offline(&mut pet, 0, &mut events, None);
 
         assert!((pet.stats.hunger - hunger_before).abs() < f32::EPSILON);
         assert!(events.is_empty());
@@ -184,7 +241,7 @@ mod tests {
         pet.age_seconds = 600;
         let mut events = EventBus::new();
 
-        simulate_offline(&mut pet, 28800, &mut events);
+        simulate_offline(&mut pet, 28800, &mut events, None);
 
         // Pet is alive (no death from starvation in v2)
         assert!(pet.alive);
@@ -200,10 +257,84 @@ mod tests {
             happiness_change: -15.12,
             energy_change: -10.08,
             evolutions: 1,
+            battles_won: 0,
+            xp_earned: 0,
+            levels_gained: 0,
         };
 
         let msg = summary.message();
         assert!(msg.contains("2h 0m"));
         assert!(msg.contains("evolved 1 time"));
+    }
+
+    #[test]
+    fn offline_with_combat_produces_xp() {
+        let mut pet = Pet::new("Test");
+        pet.stage = PetStage::Adult;
+        pet.age_seconds = 600;
+        let mut events = EventBus::new();
+        let mut profile = CombatProfile::new();
+        let mut explore = ExploreState::default();
+
+        let summary = simulate_offline(
+            &mut pet,
+            100,
+            &mut events,
+            Some(&mut OfflineCombatContext {
+                profile: &mut profile,
+                explore_state: &mut explore,
+                game_mode: GameMode::Explore,
+            }),
+        );
+
+        // 100 battles at avg_xp = 10 + 1*2 = 12 each = 1200 XP total
+        assert_eq!(summary.battles_won, 100);
+        assert_eq!(summary.xp_earned, 1200);
+        assert!(summary.levels_gained > 0);
+        assert!(explore.battles_won == 100);
+        assert!(explore.total_xp_earned == 1200);
+    }
+
+    #[test]
+    fn offline_combat_in_camp_mode_does_nothing() {
+        let mut pet = Pet::new("Test");
+        pet.stage = PetStage::Adult;
+        pet.age_seconds = 600;
+        let mut events = EventBus::new();
+        let mut profile = CombatProfile::new();
+        let mut explore = ExploreState::default();
+
+        let summary = simulate_offline(
+            &mut pet,
+            100,
+            &mut events,
+            Some(&mut OfflineCombatContext {
+                profile: &mut profile,
+                explore_state: &mut explore,
+                game_mode: GameMode::Camp,
+            }),
+        );
+
+        assert_eq!(summary.battles_won, 0);
+        assert_eq!(summary.xp_earned, 0);
+    }
+
+    #[test]
+    fn summary_message_includes_combat() {
+        let summary = OfflineSummary {
+            elapsed_seconds: 3600,
+            hunger_change: 12.6,
+            happiness_change: -7.56,
+            energy_change: -5.04,
+            evolutions: 0,
+            battles_won: 3600,
+            xp_earned: 43200,
+            levels_gained: 5,
+        };
+
+        let msg = summary.message();
+        assert!(msg.contains("Won 3600 battles"));
+        assert!(msg.contains("43200 XP"));
+        assert!(msg.contains("Gained 5 levels"));
     }
 }
