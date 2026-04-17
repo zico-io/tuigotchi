@@ -1,0 +1,43 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "A source file was just modified: $ARGUMENTS\n\nCheck if the edited file is under crates/core/src/ or crates/tui/src/. If it is NOT a source file in those directories (e.g. it's a wiki page, CLAUDE.md, config file, or any non-Rust file), do nothing — output empty JSON {}.\n\nIf it IS a crate source file, briefly scan what changed and check whether any wiki page in wiki/ contains information that is now stale. Focus on:\n- wiki/game-design/stats-and-decay.md — stat values, decay rates, thresholds\n- wiki/game-design/actions.md — action stat deltas\n- wiki/game-design/pet-lifecycle.md — evolution thresholds, stage names\n- wiki/game-design/ascii-art.md — ASCII art content, colors\n- wiki/architecture/event-system.md — GameEvent variants, warning thresholds\n- wiki/architecture/workspace-layout.md — file paths, module structure\n\nIf a wiki page needs updating, output JSON with a systemMessage field suggesting the update. Example: {\"systemMessage\": \"Wiki drift detected: hunger decay rate changed in tick.rs but wiki/game-design/stats-and-decay.md still shows the old value. Consider updating the wiki.\"}\n\nIf nothing is stale, output empty JSON {}.",
+            "timeout": 30,
+            "model": "claude-haiku-4-5-20251001",
+            "statusMessage": "Checking wiki freshness..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "The session is ending. Check if any Rust source files under crates/ were modified during this session by running: git diff --name-only HEAD\n\nIf no crate source files changed, do nothing — output {}.\n\nIf crate source files changed, do a quick audit:\n1. Read the changed files to understand what was modified\n2. Scan the relevant wiki pages to see if they reflect the current code state\n3. If wiki pages are stale, output JSON suggesting updates:\n   {\"systemMessage\": \"Wiki maintenance needed: [list of stale pages and what needs updating]\"}\n\nIf everything is in sync, output {}.",
+            "timeout": 45,
+            "model": "claude-haiku-4-5-20251001",
+            "statusMessage": "Auditing wiki freshness..."
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "auto|manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreCompact\",\"additionalContext\":\"IMPORTANT: This project has a wiki at wiki/ that tracks architecture, game design, product, and feedback. If any code changes were made this session that affect wiki content (stat values, decay rates, action deltas, event types, file structure), note which wiki pages may need updating in the compaction summary. Key pages: wiki/game-design/stats-and-decay.md, wiki/game-design/actions.md, wiki/game-design/pet-lifecycle.md, wiki/architecture/event-system.md, wiki/architecture/workspace-layout.md.\"}}'",
+            "statusMessage": "Preserving wiki context..."
+          }
+        ]
+      }
+    ]
+  }
+}
