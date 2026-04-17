@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Enforce Conventional Commits — https://www.conventionalcommits.org/
+#
+# Enabled by running once per clone:
+#   git config core.hooksPath .githooks
+
+set -euo pipefail
+
+commit_msg_file=${1:?missing commit message file argument}
+subject=$(head -n1 "$commit_msg_file")
+
+# Skip auto-generated subjects that don't need to conform.
+case "$subject" in
+    "Merge "*|"Revert "*|"fixup!"*|"squash!"*|"amend!"*) exit 0 ;;
+esac
+
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+$'
+
+if [[ ! "$subject" =~ $pattern ]]; then
+    cat >&2 <<EOF
+ERROR: commit subject does not follow Conventional Commits.
+
+  got: $subject
+
+Expected: <type>(<optional-scope>)[!]: <subject>
+
+Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+Breaking change: append '!' before the ':' or add a 'BREAKING CHANGE:' footer.
+
+Examples:
+  feat: add pet evolution system
+  fix(tui): correct stat bar colors
+  feat(core)!: rename PetStats fields
+  docs: update install instructions
+
+See https://www.conventionalcommits.org/
+EOF
+    exit 1
+fi
