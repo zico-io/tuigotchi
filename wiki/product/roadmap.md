@@ -27,34 +27,55 @@ Tuigotchi is built in phases. V1 is a classic Tamagotchi. V2 adds JRPG depth.
 - Status bar with event messages
 - Panic hook for clean terminal restoration
 
-## V2 — JRPG Expansion (Planned)
+## V2 — Idle/Incremental JRPG (Planned)
 
-### Phase 3: Combat System
-- Random encounter triggers
-- Turn-based JRPG battle mechanics
-- Pet stats → combat stats mapping
+The v2 rework transforms tuigotchi into an idle/incremental second-monitor game with two core states: **Explore** (auto-battling) and **Camp** (pet care, inventory, skills). See [Idle Loop](../game-design/idle-loop.md) for full design.
+
+### Phase 3: Save/Load + Idle Infrastructure
+- Save/load with JSON persistence
+- Decay rebalancing for ~8-hour AFK window
+- Offline time simulation on resume
+- `needs_care` gate (stops resources, doesn't kill)
+
+### Phase 4: Game State Machine
+- Explore/Camp mode toggle
+- Auto-transition to Camp when stats critical
+- Mode-aware tick dispatch
+
+### Phase 5: Combat System
 - New `crates/combat` workspace member
+- Auto-battle engine with simple enemies (Dragon Quest style)
+- Pet stats → combat stats mapping
+- XP accumulation and leveling
 
-### Phase 4: Character Building
-- Skill trees unlocked through evolution and combat
-- Skill point allocation
-- Passive and active abilities
-- New `crates/skills` workspace member
-
-### Phase 5: Itemization
-- Diablo 2-style random loot generation
-- Affix system (prefix + suffix)
-- Rarity tiers
-- Equipment slots and inventory
+### Phase 6: Loot & Inventory
 - New `crates/items` workspace member
+- Simple stat-boost items from battle drops
+- Inventory with equip/unequip/discard
+- Equipment modifies combat stats
 
-## Feature ideas (not yet scheduled)
+### Phase 7: Boss Encounters
+- Manual turn-based boss fights (Attack/Defend/Flee)
+- Only source of death — defeat forces Camp
+- Guaranteed rare drops on victory
 
-- Save/load game state (serialization)
+### Phase 8: TUI Overhaul
+- Split into per-screen modules (Camp, Explore, Boss Fight, Inventory)
+- Visual polish and rarity colors
+
+### Phase 9: Skills
+- New `crates/skills` workspace member
+- Skill tree with points from leveling
+- Three categories: Combat, Survival, Fortune
+- Modifies decay rates, combat stats, and loot chances
+
+## Future ideas (not yet scheduled)
+
+- Diablo 2-style affix system (full random loot)
 - Multiple pets
 - Day/night cycle affecting decay rates
 - Achievements
-- Sound effects (terminal bell or audio)
+- Areas/zones with different enemy pools
 - Network features (pet battles?)
 
 ## See also

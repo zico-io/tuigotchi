@@ -32,21 +32,21 @@ pub fn apply_action(pet: &mut Pet, action: Action) {
 
     match action {
         Action::Feed => {
-            pet.stats.hunger -= 20.0;
+            pet.stats.hunger -= 25.0;
             pet.stats.energy += 5.0;
         }
         Action::Play => {
-            pet.stats.happiness += 15.0;
-            pet.stats.hunger += 10.0;
-            pet.stats.energy -= 10.0;
+            pet.stats.happiness += 20.0;
+            pet.stats.hunger += 8.0;
+            pet.stats.energy -= 8.0;
         }
         Action::Clean => {
-            pet.stats.health += 10.0;
-            pet.stats.happiness += 5.0;
+            pet.stats.health += 15.0;
+            pet.stats.happiness += 8.0;
         }
         Action::Sleep => {
-            pet.stats.energy += 30.0;
-            pet.stats.hunger += 5.0;
+            pet.stats.energy += 35.0;
+            pet.stats.hunger += 3.0;
         }
     }
 
