@@ -13,3 +13,4 @@ description = "Terminal UI for tuigotchi"
 tuigotchi-core.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
+dirs.workspace = true

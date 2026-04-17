@@ -4,6 +4,7 @@ mod ui;
 
 use std::{
     io,
+    path::PathBuf,
     time::{Duration, Instant},
 };
 
@@ -13,10 +14,18 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
+use tuigotchi_core::save;
 
 use app::App;
 
 const TICK_RATE: Duration = Duration::from_secs(1);
+
+fn save_path() -> PathBuf {
+    let dir = dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("tuigotchi");
+    dir.join("save.json")
+}
 
 fn main() -> io::Result<()> {
     // Install panic hook that restores terminal before printing panic
@@ -47,7 +56,13 @@ fn restore_terminal() -> io::Result<()> {
 fn run() -> io::Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
-    let mut app = App::new("Wobble");
+
+    let path = save_path();
+    let mut app = match save::load(&path) {
+        Ok(data) => App::from_save(data, path),
+        Err(_) => App::new("Wobble", path),
+    };
+
     let mut last_tick = Instant::now();
 
     while app.running {
@@ -73,6 +88,11 @@ fn run() -> io::Result<()> {
             app.tick(elapsed);
             last_tick = Instant::now();
         }
+    }
+
+    // Save on quit
+    if let Err(e) = app.save() {
+        eprintln!("Warning: failed to save game: {e}");
     }
 
     Ok(())

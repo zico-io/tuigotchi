@@ -3,11 +3,10 @@ use crate::{
     pet::Pet,
 };
 
-/// Per-second stat decay rates.
-const HUNGER_RATE: f32 = 0.5;
-const HAPPINESS_RATE: f32 = 0.3;
-const ENERGY_RATE: f32 = 0.2;
-const HEALTH_DECAY_WHEN_STARVING: f32 = 1.0;
+/// Per-second stat decay rates (tuned for ~8-hour idle window).
+const HUNGER_RATE: f32 = 0.0035;
+const HAPPINESS_RATE: f32 = 0.0021;
+const ENERGY_RATE: f32 = 0.0014;
 
 /// Advance the pet's state by `elapsed` seconds.
 /// Returns any game events that occurred during the tick.
@@ -23,18 +22,15 @@ pub fn tick(pet: &mut Pet, elapsed: u64, events: &mut EventBus) {
     pet.stats.happiness -= HAPPINESS_RATE * dt;
     pet.stats.energy -= ENERGY_RATE * dt;
 
-    // Starving damages health
-    if pet.stats.hunger >= 100.0 {
-        pet.stats.health -= HEALTH_DECAY_WHEN_STARVING * dt;
-    }
-
     pet.stats.clamp();
 
-    // Death check
-    if pet.stats.health <= 0.0 {
-        pet.alive = false;
-        events.push(GameEvent::Died);
-        return;
+    // Needs-care check (replaces death-from-starvation in v2)
+    if pet.check_needs_care() && !pet.needs_care {
+        pet.needs_care = true;
+        events.push(GameEvent::NeedsCare);
+    } else if pet.needs_care && pet.check_recovered() {
+        pet.needs_care = false;
+        events.push(GameEvent::Recovered);
     }
 
     // Stat warnings
@@ -76,7 +72,7 @@ mod tests {
         let mut events = EventBus::new();
 
         let hunger_before = pet.stats.hunger;
-        tick(&mut pet, 10, &mut events);
+        tick(&mut pet, 1000, &mut events);
 
         assert!(pet.stats.hunger > hunger_before);
         assert!(pet.stats.happiness < 50.0);
@@ -84,16 +80,42 @@ mod tests {
     }
 
     #[test]
-    fn pet_dies_when_health_depleted() {
+    fn starvation_triggers_needs_care_not_death() {
         let mut pet = Pet::new("Test");
-        pet.stats.hunger = 100.0;
-        pet.stats.health = 5.0;
+        pet.stage = PetStage::Adult;
+        pet.age_seconds = 600;
+        pet.stats.hunger = 89.0;
         let mut events = EventBus::new();
 
-        tick(&mut pet, 10, &mut events);
+        // Push hunger past 90 threshold
+        tick(&mut pet, 1000, &mut events);
 
-        assert!(!pet.alive);
-        assert!(events.drain().iter().any(|e| matches!(e, GameEvent::Died)));
+        assert!(pet.alive); // no death from starvation in v2
+        assert!(pet.needs_care);
+        assert!(events
+            .drain()
+            .iter()
+            .any(|e| matches!(e, GameEvent::NeedsCare)));
+    }
+
+    #[test]
+    fn decay_rates_are_idle_scaled() {
+        let mut pet = Pet::new("Test");
+        pet.stage = PetStage::Adult;
+        pet.age_seconds = 600;
+        let mut events = EventBus::new();
+
+        // After 1 hour (3600s), stats should have changed modestly
+        tick(&mut pet, 3600, &mut events);
+
+        // Hunger: 50 + 0.0035 * 3600 = 62.6
+        assert!((pet.stats.hunger - 62.6).abs() < 0.1);
+        // Happiness: 50 - 0.0021 * 3600 = 42.44
+        assert!((pet.stats.happiness - 42.44).abs() < 0.1);
+        // Energy: 100 - 0.0014 * 3600 = 94.96
+        assert!((pet.stats.energy - 94.96).abs() < 0.1);
+        // Not starving yet, health unchanged
+        assert!((pet.stats.health - 100.0).abs() < f32::EPSILON);
     }
 
     #[test]

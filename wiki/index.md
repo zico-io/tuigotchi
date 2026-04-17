@@ -19,6 +19,7 @@ Start with [schema.md](schema.md) to understand how this wiki is organized and m
 - [Stats and Decay](game-design/stats-and-decay.md) — four stats, decay rates, starvation, balance math
 - [Actions](game-design/actions.md) — Feed/Play/Clean/Sleep with stat delta table
 - [ASCII Art](game-design/ascii-art.md) — art per stage, color mapping, layout
+- [Idle Loop](game-design/idle-loop.md) — two-state Explore/Camp loop, offline progression, idle pacing
 - [Future Combat](game-design/future-combat.md) — JRPG encounters, skill trees, loot (design space)
 
 ## Product & Roadmap

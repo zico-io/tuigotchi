@@ -10,3 +10,5 @@ homepage.workspace = true
 description = "Core game logic for tuigotchi — no TUI dependencies"
 
 [dependencies]
+serde.workspace = true
+serde_json.workspace = true

@@ -10,8 +10,12 @@ pub enum GameEvent {
     StatWarning(&'static str),
     /// The pet evolved to a new stage.
     Evolved { from: PetStage, to: PetStage },
-    /// The pet has died.
+    /// The pet has died (boss fights only in v2).
     Died,
+    /// The pet's stats are critical — needs care before exploring.
+    NeedsCare,
+    /// The pet has recovered from needs-care state.
+    Recovered,
 }
 
 /// Simple event collector. Gather events during a tick, drain after processing.
