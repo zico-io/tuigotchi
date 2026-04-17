@@ -12,7 +12,11 @@ const ENERGY_RATE: f32 = 0.0014;
 ///
 /// Applies stat decay in batch, steps through evolution thresholds,
 /// and checks needs-care status. Returns a summary of what happened.
-pub fn simulate_offline(pet: &mut Pet, elapsed_seconds: u64, events: &mut EventBus) -> OfflineSummary {
+pub fn simulate_offline(
+    pet: &mut Pet,
+    elapsed_seconds: u64,
+    events: &mut EventBus,
+) -> OfflineSummary {
     if !pet.alive || elapsed_seconds == 0 {
         return OfflineSummary::default();
     }
@@ -45,7 +49,10 @@ pub fn simulate_offline(pet: &mut Pet, elapsed_seconds: u64, events: &mut EventB
                 let prev = pet.stage;
                 pet.stage = next;
                 summary.evolutions += 1;
-                events.push(GameEvent::Evolved { from: prev, to: next });
+                events.push(GameEvent::Evolved {
+                    from: prev,
+                    to: next,
+                });
             } else {
                 break;
             }
@@ -137,7 +144,10 @@ mod tests {
         simulate_offline(&mut pet, 2000, &mut events);
 
         assert!(pet.needs_care);
-        assert!(events.drain().iter().any(|e| matches!(e, GameEvent::NeedsCare)));
+        assert!(events
+            .drain()
+            .iter()
+            .any(|e| matches!(e, GameEvent::NeedsCare)));
     }
 
     #[test]

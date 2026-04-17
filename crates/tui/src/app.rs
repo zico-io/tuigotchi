@@ -113,8 +113,7 @@ impl App {
                         Some(format!("{} needs care! Stats are critical.", self.pet.name));
                 }
                 GameEvent::Recovered => {
-                    self.status_message =
-                        Some(format!("{} is feeling better!", self.pet.name));
+                    self.status_message = Some(format!("{} is feeling better!", self.pet.name));
                 }
                 _ => {}
             }
