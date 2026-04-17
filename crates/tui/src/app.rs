@@ -1,7 +1,11 @@
+use std::path::PathBuf;
+
 use tuigotchi_core::{
     action::{self, Action, ALL_ACTIONS},
     event::{EventBus, GameEvent},
+    offline,
     pet::Pet,
+    save::{self, SaveData},
     tick,
 };
 
@@ -11,17 +15,58 @@ pub struct App {
     pub selected_action: usize,
     pub status_message: Option<String>,
     pub running: bool,
+    pub save_path: PathBuf,
 }
 
 impl App {
-    pub fn new(pet_name: impl Into<String>) -> Self {
+    pub fn new(pet_name: impl Into<String>, save_path: PathBuf) -> Self {
         Self {
             pet: Pet::new(pet_name),
             events: EventBus::new(),
             selected_action: 0,
             status_message: None,
             running: true,
+            save_path,
         }
+    }
+
+    /// Restore from save data, simulating offline time. Returns the app with a welcome-back message.
+    pub fn from_save(data: SaveData, save_path: PathBuf) -> Self {
+        let mut pet = data.pet;
+        let mut events = EventBus::new();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let elapsed = now.saturating_sub(data.last_saved_at);
+        let summary = offline::simulate_offline(&mut pet, elapsed, &mut events);
+        let status_message = if elapsed > 60 {
+            Some(summary.message())
+        } else {
+            None
+        };
+
+        Self {
+            pet,
+            events,
+            selected_action: 0,
+            status_message,
+            running: true,
+            save_path,
+        }
+    }
+
+    /// Save current state to disk.
+    pub fn save(&self) -> Result<(), save::SaveError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let data = SaveData::new(self.pet.clone(), now);
+        save::save(&data, &self.save_path)
     }
 
     pub fn current_action(&self) -> Action {
@@ -62,6 +107,13 @@ impl App {
                 }
                 GameEvent::Died => {
                     self.status_message = Some(format!("{} has died...", self.pet.name));
+                }
+                GameEvent::NeedsCare => {
+                    self.status_message =
+                        Some(format!("{} needs care! Stats are critical.", self.pet.name));
+                }
+                GameEvent::Recovered => {
+                    self.status_message = Some(format!("{} is feeling better!", self.pet.name));
                 }
                 _ => {}
             }
