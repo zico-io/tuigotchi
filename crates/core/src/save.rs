@@ -2,7 +2,7 @@ use std::{fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use crate::pet::Pet;
+use crate::{game_state::GameMode, pet::Pet};
 
 /// Current save format version. Bump when SaveData layout changes.
 pub const SAVE_VERSION: u32 = 1;
@@ -14,14 +14,18 @@ pub struct SaveData {
     pub pet: Pet,
     /// Unix timestamp (seconds) of last save.
     pub last_saved_at: u64,
+    /// Active game mode at time of save (defaults to Camp for old saves).
+    #[serde(default)]
+    pub game_mode: GameMode,
 }
 
 impl SaveData {
-    pub fn new(pet: Pet, now: u64) -> Self {
+    pub fn new(pet: Pet, now: u64, game_mode: GameMode) -> Self {
         Self {
             version: SAVE_VERSION,
             pet,
             last_saved_at: now,
+            game_mode,
         }
     }
 }
@@ -86,7 +90,7 @@ pub fn load(path: &Path) -> Result<SaveData, SaveError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pet::Pet;
+    use crate::{game_state::GameMode, pet::Pet};
 
     #[test]
     fn save_load_round_trip() {
@@ -98,7 +102,7 @@ mod tests {
         let _ = fs::remove_dir(&dir);
 
         let pet = Pet::new("TestPet");
-        let data = SaveData::new(pet.clone(), 1000);
+        let data = SaveData::new(pet.clone(), 1000, GameMode::default());
 
         save(&data, &path).expect("save should succeed");
         let loaded = load(&path).expect("load should succeed");

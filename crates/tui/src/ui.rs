@@ -1,11 +1,11 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Gauge, Paragraph},
     Frame,
 };
-use tuigotchi_core::{action::ALL_ACTIONS, pet::PetStage};
+use tuigotchi_core::{action::ALL_ACTIONS, game_state::GameMode, pet::PetStage};
 
 use crate::{app::App, theme};
 
@@ -16,7 +16,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
             Constraint::Length(3), // title
             Constraint::Min(8),    // pet display
             Constraint::Length(8), // stats
-            Constraint::Length(3), // actions
+            Constraint::Length(3), // actions / explore panel
             Constraint::Length(2), // status bar
         ])
         .split(frame.area());
@@ -24,14 +24,32 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_title(frame, chunks[0], app);
     draw_pet(frame, chunks[1], app);
     draw_stats(frame, chunks[2], app);
-    draw_actions(frame, chunks[3], app);
+
+    match app.game_mode {
+        GameMode::Camp => draw_actions(frame, chunks[3], app),
+        GameMode::Explore => draw_explore(frame, chunks[3]),
+        _ => draw_actions(frame, chunks[3], app),
+    }
+
     draw_status(frame, chunks[4], app);
 }
 
 fn draw_title(frame: &mut Frame, area: Rect, app: &App) {
+    let mode_label = match app.game_mode {
+        GameMode::Camp => "CAMP",
+        GameMode::Explore => "EXPLORE",
+        _ => "???",
+    };
+
+    let needs_care = if app.pet.needs_care {
+        " [NEEDS CARE]"
+    } else {
+        ""
+    };
+
     let title = format!(
-        " {} — {:?} (age: {}s) ",
-        app.pet.name, app.pet.stage, app.pet.age_seconds
+        " {} — {:?} (age: {}s) [{}]{} ",
+        app.pet.name, app.pet.stage, app.pet.age_seconds, mode_label, needs_care
     );
     let block = Block::default()
         .title(title)
@@ -108,7 +126,25 @@ fn draw_actions(frame: &mut Frame, area: Rect, app: &App) {
 
     let paragraph = Paragraph::new(Line::from(items)).block(
         Block::default()
-            .title(" Actions [←/→ select, Enter perform, q quit] ")
+            .title(" Actions [←/→ select, Enter perform, Tab explore, q quit] ")
+            .title_style(theme::TITLE_STYLE)
+            .borders(Borders::ALL)
+            .border_style(theme::BORDER_STYLE),
+    );
+    frame.render_widget(paragraph, area);
+}
+
+fn draw_explore(frame: &mut Frame, area: Rect) {
+    let text = Line::from(vec![Span::styled(
+        "Exploring... (Tab to return to camp)",
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    )]);
+
+    let paragraph = Paragraph::new(text).block(
+        Block::default()
+            .title(" Explore [Tab return to camp, q quit] ")
             .title_style(theme::TITLE_STYLE)
             .borders(Borders::ALL)
             .border_style(theme::BORDER_STYLE),

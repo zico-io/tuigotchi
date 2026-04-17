@@ -16,6 +16,12 @@ pub enum GameEvent {
     NeedsCare,
     /// The pet has recovered from needs-care state.
     Recovered,
+    /// The player entered Explore mode.
+    EnteredExplore,
+    /// The player returned to Camp mode.
+    EnteredCamp,
+    /// The pet was forced back to Camp (needs care while exploring).
+    ForcedCamp,
 }
 
 /// Simple event collector. Gather events during a tick, drain after processing.
