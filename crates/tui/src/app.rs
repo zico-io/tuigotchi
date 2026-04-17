@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use tuigotchi_core::{
     action::{self, Action, ALL_ACTIONS},
     event::{EventBus, GameEvent},
+    game_state::GameMode,
     offline,
     pet::Pet,
     save::{self, SaveData},
@@ -16,6 +17,7 @@ pub struct App {
     pub status_message: Option<String>,
     pub running: bool,
     pub save_path: PathBuf,
+    pub game_mode: GameMode,
 }
 
 impl App {
@@ -27,6 +29,7 @@ impl App {
             status_message: None,
             running: true,
             save_path,
+            game_mode: GameMode::default(),
         }
     }
 
@@ -34,6 +37,7 @@ impl App {
     pub fn from_save(data: SaveData, save_path: PathBuf) -> Self {
         let mut pet = data.pet;
         let mut events = EventBus::new();
+        let game_mode = data.game_mode;
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -55,6 +59,7 @@ impl App {
             status_message,
             running: true,
             save_path,
+            game_mode,
         }
     }
 
@@ -65,8 +70,32 @@ impl App {
             .map(|d| d.as_secs())
             .unwrap_or(0);
 
-        let data = SaveData::new(self.pet.clone(), now);
+        let data = SaveData::new(self.pet.clone(), now, self.game_mode);
         save::save(&data, &self.save_path)
+    }
+
+    /// Whether the pet is healthy enough to explore.
+    pub fn can_explore(&self) -> bool {
+        !self.pet.needs_care
+    }
+
+    /// Toggle between Camp and Explore modes.
+    pub fn toggle_mode(&mut self) {
+        match self.game_mode {
+            GameMode::Camp => {
+                if self.can_explore() {
+                    self.game_mode = GameMode::Explore;
+                    self.status_message = Some("Heading out to explore!".into());
+                } else {
+                    self.status_message = Some("Your pet needs care before exploring!".into());
+                }
+            }
+            GameMode::Explore => {
+                self.game_mode = GameMode::Camp;
+                self.status_message = Some("Returned to camp.".into());
+            }
+            _ => {}
+        }
     }
 
     pub fn current_action(&self) -> Action {
@@ -92,7 +121,12 @@ impl App {
     }
 
     pub fn tick(&mut self, elapsed_secs: u64) {
-        tick::tick(&mut self.pet, elapsed_secs, &mut self.events);
+        tick::tick(
+            &mut self.pet,
+            elapsed_secs,
+            &mut self.events,
+            self.game_mode,
+        );
         self.process_events();
     }
 
@@ -115,6 +149,12 @@ impl App {
                 GameEvent::Recovered => {
                     self.status_message = Some(format!("{} is feeling better!", self.pet.name));
                 }
+                GameEvent::ForcedCamp => {
+                    self.game_mode = GameMode::Camp;
+                    self.status_message =
+                        Some(format!("{} was forced back to camp!", self.pet.name));
+                }
+                GameEvent::EnteredExplore | GameEvent::EnteredCamp => {}
                 _ => {}
             }
         }

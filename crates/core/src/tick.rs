@@ -1,5 +1,6 @@
 use crate::{
     event::{EventBus, GameEvent},
+    game_state::GameMode,
     pet::Pet,
 };
 
@@ -10,14 +11,14 @@ const ENERGY_RATE: f32 = 0.0014;
 
 /// Advance the pet's state by `elapsed` seconds.
 /// Returns any game events that occurred during the tick.
-pub fn tick(pet: &mut Pet, elapsed: u64, events: &mut EventBus) {
+pub fn tick(pet: &mut Pet, elapsed: u64, events: &mut EventBus, game_mode: GameMode) {
     if !pet.alive {
         return;
     }
 
     let dt = elapsed as f32;
 
-    // Stat decay
+    // Stat decay (applies in all modes)
     pet.stats.hunger += HUNGER_RATE * dt;
     pet.stats.happiness -= HAPPINESS_RATE * dt;
     pet.stats.energy -= ENERGY_RATE * dt;
@@ -28,9 +29,26 @@ pub fn tick(pet: &mut Pet, elapsed: u64, events: &mut EventBus) {
     if pet.check_needs_care() && !pet.needs_care {
         pet.needs_care = true;
         events.push(GameEvent::NeedsCare);
+
+        // If exploring, force back to camp
+        if game_mode == GameMode::Explore {
+            events.push(GameEvent::ForcedCamp);
+        }
     } else if pet.needs_care && pet.check_recovered() {
         pet.needs_care = false;
         events.push(GameEvent::Recovered);
+    }
+
+    // Mode-specific tick logic
+    #[allow(unreachable_patterns)]
+    match game_mode {
+        GameMode::Camp => {
+            // Camp: decay only (already applied above)
+        }
+        GameMode::Explore => {
+            // TODO: Phase 3 — combat tick, random encounters
+        }
+        _ => {}
     }
 
     // Stat warnings
@@ -72,7 +90,7 @@ mod tests {
         let mut events = EventBus::new();
 
         let hunger_before = pet.stats.hunger;
-        tick(&mut pet, 1000, &mut events);
+        tick(&mut pet, 1000, &mut events, GameMode::Camp);
 
         assert!(pet.stats.hunger > hunger_before);
         assert!(pet.stats.happiness < 50.0);
@@ -88,7 +106,7 @@ mod tests {
         let mut events = EventBus::new();
 
         // Push hunger past 90 threshold
-        tick(&mut pet, 1000, &mut events);
+        tick(&mut pet, 1000, &mut events, GameMode::Camp);
 
         assert!(pet.alive); // no death from starvation in v2
         assert!(pet.needs_care);
@@ -106,7 +124,7 @@ mod tests {
         let mut events = EventBus::new();
 
         // After 1 hour (3600s), stats should have changed modestly
-        tick(&mut pet, 3600, &mut events);
+        tick(&mut pet, 3600, &mut events, GameMode::Camp);
 
         // Hunger: 50 + 0.0035 * 3600 = 62.6
         assert!((pet.stats.hunger - 62.6).abs() < 0.1);
@@ -125,12 +143,43 @@ mod tests {
         pet.age_seconds = 29;
         let mut events = EventBus::new();
 
-        tick(&mut pet, 1, &mut events);
+        tick(&mut pet, 1, &mut events, GameMode::Camp);
 
         assert_eq!(pet.stage, PetStage::Baby);
         assert!(events
             .drain()
             .iter()
             .any(|e| matches!(e, GameEvent::Evolved { .. })));
+    }
+
+    #[test]
+    fn explore_mode_forces_camp_on_needs_care() {
+        let mut pet = Pet::new("Test");
+        pet.stage = PetStage::Adult;
+        pet.age_seconds = 600;
+        pet.stats.hunger = 89.0;
+        let mut events = EventBus::new();
+
+        // Push hunger past 90 threshold while exploring
+        tick(&mut pet, 1000, &mut events, GameMode::Explore);
+
+        assert!(pet.needs_care);
+        let drained = events.drain();
+        assert!(drained.iter().any(|e| matches!(e, GameEvent::NeedsCare)));
+        assert!(drained.iter().any(|e| matches!(e, GameEvent::ForcedCamp)));
+    }
+
+    #[test]
+    fn explore_mode_decays_stats() {
+        let mut pet = Pet::new("Test");
+        pet.stage = PetStage::Adult;
+        pet.age_seconds = 600;
+        let mut events = EventBus::new();
+
+        let hunger_before = pet.stats.hunger;
+        tick(&mut pet, 100, &mut events, GameMode::Explore);
+
+        // Decay still applies in Explore mode
+        assert!(pet.stats.hunger > hunger_before);
     }
 }

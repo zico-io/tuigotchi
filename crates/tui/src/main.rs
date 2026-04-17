@@ -77,6 +77,7 @@ fn run() -> io::Result<()> {
                         KeyCode::Left | KeyCode::Char('h') => app.prev_action(),
                         KeyCode::Right | KeyCode::Char('l') => app.next_action(),
                         KeyCode::Enter | KeyCode::Char(' ') => app.perform_action(),
+                        KeyCode::Tab => app.toggle_mode(),
                         _ => {}
                     }
                 }
