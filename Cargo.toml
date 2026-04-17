@@ -1,0 +1,17 @@
+[workspace]
+members = ["crates/core", "crates/tui"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+authors = ["zico-io"]
+repository = "https://github.com/zico-io/tuigotchi"
+homepage = "https://github.com/zico-io/tuigotchi"
+
+[workspace.dependencies]
+tuigotchi-core = { path = "crates/core" }
+ratatui = "0.29"
+crossterm = "0.28"
