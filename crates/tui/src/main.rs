@@ -83,6 +83,13 @@ fn run() -> io::Result<()> {
                             KeyCode::Char('q') => app.quit(),
                             _ => {}
                         },
+                        Screen::BossFight => match key.code {
+                            KeyCode::Left | KeyCode::Char('h') => app.boss_prev_action(),
+                            KeyCode::Right | KeyCode::Char('l') => app.boss_next_action(),
+                            KeyCode::Enter | KeyCode::Char(' ') => app.boss_perform_action(),
+                            KeyCode::Char('q') => app.quit(),
+                            _ => {}
+                        },
                         Screen::Main => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.quit(),
                             KeyCode::Left | KeyCode::Char('h') => app.prev_action(),

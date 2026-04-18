@@ -1,7 +1,9 @@
 use std::{fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
-use tuigotchi_combat::{combat_profile::CombatProfile, explore_state::ExploreState};
+use tuigotchi_combat::{
+    combat_profile::CombatProfile, explore_state::ExploreState, manual_combat::BossEncounterState,
+};
 use tuigotchi_items::inventory::Inventory;
 
 use crate::{game_state::GameMode, pet::Pet};
@@ -28,6 +30,9 @@ pub struct SaveData {
     /// Player inventory. None for pre-items saves.
     #[serde(default)]
     pub inventory: Option<Inventory>,
+    /// In-progress boss encounter, if any.
+    #[serde(default)]
+    pub boss_encounter: Option<BossEncounterState>,
 }
 
 impl SaveData {
@@ -38,6 +43,7 @@ impl SaveData {
         combat_profile: Option<CombatProfile>,
         explore_state: Option<ExploreState>,
         inventory: Option<Inventory>,
+        boss_encounter: Option<BossEncounterState>,
     ) -> Self {
         Self {
             version: SAVE_VERSION,
@@ -47,6 +53,7 @@ impl SaveData {
             combat_profile,
             explore_state,
             inventory,
+            boss_encounter,
         }
     }
 }
@@ -123,7 +130,15 @@ mod tests {
         let _ = fs::remove_dir(&dir);
 
         let pet = Pet::new("TestPet");
-        let data = SaveData::new(pet.clone(), 1000, GameMode::default(), None, None, None);
+        let data = SaveData::new(
+            pet.clone(),
+            1000,
+            GameMode::default(),
+            None,
+            None,
+            None,
+            None,
+        );
 
         save(&data, &path).expect("save should succeed");
         let loaded = load(&path).expect("load should succeed");
@@ -143,5 +158,30 @@ mod tests {
         let path = std::env::temp_dir().join("tuigotchi_nonexistent.json");
         let result = load(&path);
         assert!(matches!(result, Err(SaveError::NotFound)));
+    }
+
+    #[test]
+    fn boss_encounter_state_serializes_round_trip() {
+        use tuigotchi_combat::{
+            battle::CombatStats, boss::generate_boss, manual_combat::BossEncounterState,
+        };
+
+        let mut rng = rand::thread_rng();
+        let boss = generate_boss(3, &mut rng);
+        let stats = CombatStats {
+            attack: 30.0,
+            defense: 15.0,
+            speed: 10.0,
+            max_hp: 100.0,
+        };
+        let encounter = BossEncounterState::new(boss, stats);
+
+        let json = serde_json::to_string(&encounter).expect("serialize");
+        let loaded: BossEncounterState = serde_json::from_str(&json).expect("deserialize");
+
+        assert!((loaded.pet_hp - encounter.pet_hp).abs() < f32::EPSILON);
+        assert!((loaded.boss_hp - encounter.boss_hp).abs() < f32::EPSILON);
+        assert_eq!(loaded.boss.enemy.name, encounter.boss.enemy.name);
+        assert_eq!(loaded.turn, 0);
     }
 }

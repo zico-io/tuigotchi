@@ -6,7 +6,8 @@ use ratatui::{
     Frame,
 };
 use tuigotchi_core::{
-    action::ALL_ACTIONS, game_state::GameMode, items::item::Rarity, pet::PetStage,
+    action::ALL_ACTIONS, combat::manual_combat::ALL_COMBAT_ACTIONS, game_state::GameMode,
+    items::item::Rarity, pet::PetStage,
 };
 
 use crate::{
@@ -18,6 +19,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     match app.screen {
         Screen::Main => draw_main(frame, app),
         Screen::Inventory => draw_inventory(frame, app),
+        Screen::BossFight => draw_boss_fight(frame, app),
     }
 }
 
@@ -37,9 +39,11 @@ fn draw_main(frame: &mut Frame, app: &App) {
     draw_pet(frame, chunks[1], app);
     draw_stats(frame, chunks[2], app);
 
+    #[allow(unreachable_patterns)]
     match app.game_mode {
         GameMode::Camp => draw_actions(frame, chunks[3], app),
         GameMode::Explore => draw_explore(frame, chunks[3], app),
+        GameMode::BossFight => draw_explore(frame, chunks[3], app),
         _ => draw_actions(frame, chunks[3], app),
     }
 
@@ -47,9 +51,11 @@ fn draw_main(frame: &mut Frame, app: &App) {
 }
 
 fn draw_title(frame: &mut Frame, area: Rect, app: &App) {
+    #[allow(unreachable_patterns)]
     let mode_label = match app.game_mode {
         GameMode::Camp => "CAMP",
         GameMode::Explore => "EXPLORE",
+        GameMode::BossFight => "BOSS FIGHT",
         _ => "???",
     };
 
@@ -361,6 +367,179 @@ fn draw_inventory_details(frame: &mut Frame, area: Rect, app: &App) {
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, inner);
+}
+
+fn draw_boss_fight(frame: &mut Frame, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // boss HP
+            Constraint::Min(8),    // boss ASCII art + pet HP
+            Constraint::Length(7), // battle log
+            Constraint::Length(3), // action selector
+            Constraint::Length(2), // status bar
+        ])
+        .split(frame.area());
+
+    if let Some(ref encounter) = app.boss_encounter {
+        // Boss HP bar
+        let boss_hp_ratio = if encounter.boss_max_hp > 0.0 {
+            (encounter.boss_hp as f64 / encounter.boss_max_hp as f64).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let boss_hp_gauge = Gauge::default()
+            .label(format!(
+                "{} HP: {:.0}/{:.0}",
+                encounter.boss.enemy.name, encounter.boss_hp, encounter.boss_max_hp,
+            ))
+            .ratio(boss_hp_ratio)
+            .gauge_style(Style::default().fg(Color::Red))
+            .block(
+                Block::default()
+                    .title(format!(" BOSS: {} ", encounter.boss.enemy.name))
+                    .title_style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Red)),
+            );
+        frame.render_widget(boss_hp_gauge, chunks[0]);
+
+        // Boss art + Pet HP
+        let mid_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(chunks[1]);
+
+        // Boss ASCII art
+        let boss_art = r#"
+    /\  /\
+   ( @  @ )
+    > <> <
+   /|    |\
+  / |    | \"#;
+        let boss_paragraph = Paragraph::new(boss_art)
+            .style(Style::default().fg(Color::Red))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Red)),
+            );
+        frame.render_widget(boss_paragraph, mid_chunks[0]);
+
+        // Pet HP
+        let pet_hp_ratio = if encounter.pet_max_hp > 0.0 {
+            (encounter.pet_hp as f64 / encounter.pet_max_hp as f64).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let pet_info = vec![
+            Line::from(Span::styled(
+                app.pet.name.to_string(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(format!(
+                "HP: {:.0}/{:.0}",
+                encounter.pet_hp, encounter.pet_max_hp,
+            )),
+            Line::from(format!(
+                "ATK: {:.0}  DEF: {:.0}",
+                encounter.pet_stats.attack, encounter.pet_stats.defense,
+            )),
+            Line::from(format!("Turn: {}", encounter.turn)),
+        ];
+        let pet_block = Block::default()
+            .title(" Your Pet ")
+            .title_style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan));
+        let pet_inner = pet_block.inner(mid_chunks[1]);
+        frame.render_widget(pet_block, mid_chunks[1]);
+
+        let pet_paragraph = Paragraph::new(pet_info);
+        frame.render_widget(pet_paragraph, pet_inner);
+
+        // Pet HP gauge rendered separately in a dedicated area
+        // (We'll add it as the last line in the pet panel area)
+        let gauge_area = Rect {
+            x: pet_inner.x,
+            y: pet_inner.y + pet_inner.height.saturating_sub(1),
+            width: pet_inner.width,
+            height: 1,
+        };
+        let pet_gauge = Gauge::default()
+            .label(format!("{:.0}%", pet_hp_ratio * 100.0))
+            .ratio(pet_hp_ratio)
+            .gauge_style(Style::default().fg(Color::Cyan));
+        frame.render_widget(pet_gauge, gauge_area);
+
+        // Battle log (last 5 entries)
+        let log_lines: Vec<Line> = encounter
+            .log
+            .iter()
+            .rev()
+            .take(5)
+            .rev()
+            .map(|entry| {
+                Line::from(Span::styled(
+                    format!("  {entry}"),
+                    Style::default().fg(Color::Yellow),
+                ))
+            })
+            .collect();
+
+        let log_paragraph = Paragraph::new(log_lines).block(
+            Block::default()
+                .title(" Battle Log ")
+                .title_style(theme::TITLE_STYLE)
+                .borders(Borders::ALL)
+                .border_style(theme::BORDER_STYLE),
+        );
+        frame.render_widget(log_paragraph, chunks[2]);
+
+        // Action selector
+        let items: Vec<Span> = ALL_COMBAT_ACTIONS
+            .iter()
+            .enumerate()
+            .flat_map(|(i, action)| {
+                let style = if i == app.boss_action_cursor {
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                let prefix = if i == app.boss_action_cursor {
+                    "\u{25b8} "
+                } else {
+                    "  "
+                };
+                vec![Span::styled(format!("{prefix}{}  ", action.label()), style)]
+            })
+            .collect();
+
+        let action_paragraph = Paragraph::new(Line::from(items)).block(
+            Block::default()
+                .title(" Actions [\u{2190}/\u{2192} select, Enter perform, q quit] ")
+                .title_style(theme::TITLE_STYLE)
+                .borders(Borders::ALL)
+                .border_style(theme::BORDER_STYLE),
+        );
+        frame.render_widget(action_paragraph, chunks[3]);
+    } else {
+        // No encounter, shouldn't happen but handle gracefully
+        let paragraph = Paragraph::new("No boss encounter active...")
+            .style(Style::default().fg(Color::DarkGray));
+        frame.render_widget(paragraph, chunks[1]);
+    }
+
+    draw_status(frame, chunks[4], app);
 }
 
 fn draw_status(frame: &mut Frame, area: Rect, app: &App) {

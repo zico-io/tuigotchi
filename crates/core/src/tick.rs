@@ -126,6 +126,7 @@ fn run_combat_tick(pet: &Pet, events: &mut EventBus, ctx: &mut CombatContext<'_>
         } => {
             ctx.explore_state.battles_won += 1;
             ctx.explore_state.total_xp_earned += xp_earned;
+            ctx.explore_state.battles_since_boss += 1;
             ctx.explore_state.last_battle_log = Some(format!(
                 "Defeated {}! +{} XP (took {:.0} damage)",
                 foe.name, xp_earned, damage_taken,
@@ -151,6 +152,12 @@ fn run_combat_tick(pet: &Pet, events: &mut EventBus, ctx: &mut CombatContext<'_>
                 } else {
                     events.push(GameEvent::InventoryFull);
                 }
+            }
+
+            // Check for boss availability
+            if ctx.explore_state.battles_since_boss >= 50 {
+                ctx.explore_state.battles_since_boss = 0;
+                events.push(GameEvent::BossAvailable);
             }
         }
         BattleResult::Defeat { damage_taken } => {
@@ -342,6 +349,52 @@ mod tests {
         assert!(
             !inventory.is_empty(),
             "should have received at least one loot drop in 50 battles"
+        );
+    }
+
+    #[test]
+    fn boss_available_triggers_at_50_battles() {
+        let mut pet = Pet::new("Test");
+        pet.stage = PetStage::Adult;
+        pet.age_seconds = 600;
+        let mut inventory = Inventory::new(200);
+
+        let mut profile = CombatProfile::new();
+        let mut explore = ExploreState::default();
+
+        // Run 50 ticks (each produces one battle)
+        let mut boss_available_seen = false;
+        for _ in 0..60 {
+            let mut events = EventBus::new();
+            let eq_mods = inventory.total_modifiers();
+
+            tick(
+                &mut pet,
+                1,
+                &mut events,
+                GameMode::Explore,
+                Some(&mut CombatContext {
+                    profile: &mut profile,
+                    explore_state: &mut explore,
+                    inventory: &mut inventory,
+                    equipment_modifiers: eq_mods,
+                }),
+            );
+
+            for event in events.drain() {
+                if matches!(event, GameEvent::BossAvailable) {
+                    boss_available_seen = true;
+                }
+            }
+        }
+
+        // After 50+ battles won, we should see BossAvailable
+        // (Some battles may be lost, so we run 60 to be safe)
+        assert!(
+            boss_available_seen || explore.battles_won < 50,
+            "BossAvailable should fire after 50 victories; wins={}, battles_since_boss={}",
+            explore.battles_won,
+            explore.battles_since_boss,
         );
     }
 }

@@ -34,6 +34,14 @@ pub enum GameEvent {
     ItemEquipped { item_name: String, slot: String },
     /// Inventory is full — loot was discarded.
     InventoryFull,
+    /// A boss is available to fight (after enough auto-battles).
+    BossAvailable,
+    /// Defeated a boss.
+    BossDefeated { xp_earned: u32, boss_name: String },
+    /// Lost to a boss.
+    BossDefeat { boss_name: String },
+    /// Fled from a boss fight.
+    FledFromBoss,
 }
 
 /// Simple event collector. Gather events during a tick, drain after processing.

@@ -10,6 +10,8 @@ pub enum GameMode {
     /// Home base — feed, play, clean, sleep.
     #[default]
     Camp,
-    /// Out adventuring — combat ticks will land in Phase 3.
+    /// Out adventuring — auto-battles and exploration.
     Explore,
+    /// Engaged in a turn-based boss fight.
+    BossFight,
 }
