@@ -40,6 +40,7 @@ pub struct App {
     pub inventory_cursor: usize,
     pub boss_encounter: Option<BossEncounterState>,
     pub boss_action_cursor: usize,
+    pub explore_tick_count: u32,
 }
 
 impl App {
@@ -59,6 +60,7 @@ impl App {
             inventory_cursor: 0,
             boss_encounter: None,
             boss_action_cursor: 0,
+            explore_tick_count: 0,
         }
     }
 
@@ -117,6 +119,7 @@ impl App {
             inventory_cursor: 0,
             boss_encounter,
             boss_action_cursor: 0,
+            explore_tick_count: 0,
         }
     }
 
@@ -265,6 +268,10 @@ impl App {
     }
 
     pub fn tick(&mut self, elapsed_secs: u64) {
+        if self.game_mode == GameMode::Explore {
+            self.explore_tick_count = self.explore_tick_count.wrapping_add(1);
+        }
+
         let eq_mods = self.inventory.total_modifiers();
         let combat_ctx = if self.game_mode == GameMode::Explore {
             Some(CombatContext {
