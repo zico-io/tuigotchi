@@ -25,3 +25,18 @@ pub const STATUS_STYLE: Style = Style::new()
 pub const COMMON_COLOR: Color = Color::White;
 pub const UNCOMMON_COLOR: Color = Color::Green;
 pub const RARE_COLOR: Color = Color::Blue;
+
+// Combat colors
+pub const BOSS_COLOR: Color = Color::Red;
+pub const BOSS_BORDER: Style = Style::new().fg(Color::Red);
+pub const PET_COMBAT_COLOR: Color = Color::Cyan;
+
+// Level-up highlight
+#[allow(dead_code)]
+pub const LEVEL_UP_STYLE: Style = Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+
+// Battle log
+pub const BATTLE_LOG_COLOR: Color = Color::Yellow;
+
+// Explore
+pub const WIN_COUNT_STYLE: Style = Style::new().fg(Color::Green).add_modifier(Modifier::BOLD);
