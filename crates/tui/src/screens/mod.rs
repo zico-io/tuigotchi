@@ -3,3 +3,4 @@ pub mod camp;
 pub mod explore;
 pub mod inventory;
 mod shared;
+pub mod skills;

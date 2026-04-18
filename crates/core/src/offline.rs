@@ -1,5 +1,6 @@
 use tuigotchi_combat::{combat_profile::CombatProfile, explore_state::ExploreState};
 use tuigotchi_items::inventory::Inventory;
+use tuigotchi_skills::tree::AggregatedEffects;
 
 use crate::{
     event::{EventBus, GameEvent},
@@ -29,6 +30,7 @@ pub fn simulate_offline(
     elapsed_seconds: u64,
     events: &mut EventBus,
     combat: Option<&mut OfflineCombatContext<'_>>,
+    skill_effects: &AggregatedEffects,
 ) -> OfflineSummary {
     if !pet.alive || elapsed_seconds == 0 {
         return OfflineSummary::default();
@@ -40,14 +42,14 @@ pub fn simulate_offline(
         ..Default::default()
     };
 
-    // Batch stat decay
+    // Batch stat decay with skill modifiers
     let hunger_before = pet.stats.hunger;
     let happiness_before = pet.stats.happiness;
     let energy_before = pet.stats.energy;
 
-    pet.stats.hunger += HUNGER_RATE * dt;
-    pet.stats.happiness -= HAPPINESS_RATE * dt;
-    pet.stats.energy -= ENERGY_RATE * dt;
+    pet.stats.hunger += HUNGER_RATE * dt * skill_effects.hunger_rate_multiplier;
+    pet.stats.happiness -= HAPPINESS_RATE * dt * skill_effects.happiness_rate_multiplier;
+    pet.stats.energy -= ENERGY_RATE * dt * skill_effects.energy_rate_multiplier;
     pet.stats.clamp();
 
     summary.hunger_change = pet.stats.hunger - hunger_before;
@@ -88,7 +90,8 @@ pub fn simulate_offline(
             let avg_xp = 10 + level * 2;
             // 1 battle per second offline, cap at a reasonable amount
             let battles = elapsed_seconds.min(28800) as u32; // cap at 8 hours
-            let total_xp = battles * avg_xp;
+            let total_xp =
+                (battles as f32 * avg_xp as f32 * skill_effects.xp_multiplier).round() as u32;
 
             ctx.explore_state.battles_won += battles;
             ctx.explore_state.total_xp_earned += total_xp;
@@ -107,8 +110,9 @@ pub fn simulate_offline(
                 });
             }
 
-            // Simplified offline loot: ~30% of battles produce items
-            let estimated_drops = (battles as f32 * 0.30) as u32;
+            // Simplified offline loot: ~30% of battles produce items (with skill bonus)
+            let loot_chance = (0.30 + skill_effects.loot_chance_bonus).min(1.0);
+            let estimated_drops = (battles as f32 * loot_chance) as u32;
             let mut rng = rand::thread_rng();
             let mut items_found = 0u32;
             for _ in 0..estimated_drops {
@@ -217,6 +221,10 @@ mod tests {
     use crate::pet::{Pet, PetStage};
     use tuigotchi_items::inventory::Inventory;
 
+    fn default_effects() -> AggregatedEffects {
+        AggregatedEffects::default()
+    }
+
     #[test]
     fn offline_one_hour_decay() {
         let mut pet = Pet::new("Test");
@@ -224,7 +232,7 @@ mod tests {
         pet.age_seconds = 600;
         let mut events = EventBus::new();
 
-        let summary = simulate_offline(&mut pet, 3600, &mut events, None);
+        let summary = simulate_offline(&mut pet, 3600, &mut events, None, &default_effects());
 
         // Hunger: 50 + 0.0035 * 3600 = 62.6
         assert!((pet.stats.hunger - 62.6).abs() < 0.1);
@@ -242,7 +250,7 @@ mod tests {
         let mut events = EventBus::new();
 
         // 2000s of hunger at 0.0035/s = +7.0 → 92.0 >= 90 threshold
-        simulate_offline(&mut pet, 2000, &mut events, None);
+        simulate_offline(&mut pet, 2000, &mut events, None, &default_effects());
 
         assert!(pet.needs_care);
         assert!(events
@@ -260,7 +268,7 @@ mod tests {
 
         // 500 seconds should evolve Egg→Baby (30s) and Baby→Teen (120s)
         // and Teen→Adult (300s)
-        let summary = simulate_offline(&mut pet, 500, &mut events, None);
+        let summary = simulate_offline(&mut pet, 500, &mut events, None, &default_effects());
 
         assert_eq!(pet.stage, PetStage::Adult);
         assert_eq!(summary.evolutions, 3);
@@ -272,7 +280,7 @@ mod tests {
         let hunger_before = pet.stats.hunger;
         let mut events = EventBus::new();
 
-        simulate_offline(&mut pet, 0, &mut events, None);
+        simulate_offline(&mut pet, 0, &mut events, None, &default_effects());
 
         assert!((pet.stats.hunger - hunger_before).abs() < f32::EPSILON);
         assert!(events.is_empty());
@@ -285,7 +293,7 @@ mod tests {
         pet.age_seconds = 600;
         let mut events = EventBus::new();
 
-        simulate_offline(&mut pet, 28800, &mut events, None);
+        simulate_offline(&mut pet, 28800, &mut events, None, &default_effects());
 
         // Pet is alive (no death from starvation in v2)
         assert!(pet.alive);
@@ -333,6 +341,7 @@ mod tests {
                 inventory: &mut inventory,
                 game_mode: GameMode::Explore,
             }),
+            &default_effects(),
         );
 
         // 100 battles at avg_xp = 10 + 1*2 = 12 each = 1200 XP total
@@ -363,6 +372,7 @@ mod tests {
                 inventory: &mut inventory,
                 game_mode: GameMode::Camp,
             }),
+            &default_effects(),
         );
 
         assert_eq!(summary.battles_won, 0);
@@ -389,6 +399,7 @@ mod tests {
                 inventory: &mut inventory,
                 game_mode: GameMode::Explore,
             }),
+            &default_effects(),
         );
 
         assert!(

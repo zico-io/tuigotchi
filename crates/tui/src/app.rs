@@ -14,6 +14,10 @@ use tuigotchi_core::{
     offline::{self, OfflineCombatContext},
     pet::Pet,
     save::{self, SaveData},
+    skills::{
+        skill::{self, ALL_SKILL_IDS},
+        tree::SkillTree,
+    },
     tick::{self, CombatContext},
 };
 
@@ -23,6 +27,7 @@ pub enum Screen {
     Main,
     Inventory,
     BossFight,
+    Skills,
 }
 
 pub struct App {
@@ -41,6 +46,8 @@ pub struct App {
     pub boss_encounter: Option<BossEncounterState>,
     pub boss_action_cursor: usize,
     pub explore_tick_count: u32,
+    pub skill_tree: SkillTree,
+    pub skill_cursor: usize,
 }
 
 impl App {
@@ -61,6 +68,8 @@ impl App {
             boss_encounter: None,
             boss_action_cursor: 0,
             explore_tick_count: 0,
+            skill_tree: SkillTree::new(),
+            skill_cursor: 0,
         }
     }
 
@@ -73,6 +82,8 @@ impl App {
         let mut explore_state = data.explore_state.unwrap_or_default();
         let mut inventory = data.inventory.unwrap_or_default();
         let boss_encounter = data.boss_encounter;
+        let skill_tree = data.skill_tree.unwrap_or_default();
+        let skill_effects = skill_tree.total_effects();
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -90,6 +101,7 @@ impl App {
                 inventory: &mut inventory,
                 game_mode,
             }),
+            &skill_effects,
         );
         let status_message = if elapsed > 60 {
             Some(summary.message())
@@ -120,6 +132,8 @@ impl App {
             boss_encounter,
             boss_action_cursor: 0,
             explore_tick_count: 0,
+            skill_tree,
+            skill_cursor: 0,
         }
     }
 
@@ -138,6 +152,7 @@ impl App {
             Some(self.explore_state.clone()),
             Some(self.inventory.clone()),
             self.boss_encounter.clone(),
+            Some(self.skill_tree.clone()),
         );
         save::save(&data, &self.save_path)
     }
@@ -180,8 +195,68 @@ impl App {
             Screen::Inventory => {
                 self.screen = Screen::Main;
             }
-            Screen::BossFight => {
-                self.status_message = Some("Can't manage inventory during a boss fight!".into());
+            Screen::BossFight | Screen::Skills => {
+                self.status_message = Some("Close the current screen first.".into());
+            }
+        }
+    }
+
+    /// Toggle the skills screen (only available in Camp mode).
+    pub fn toggle_skills(&mut self) {
+        match self.screen {
+            Screen::Main => {
+                if self.game_mode == GameMode::Camp {
+                    self.screen = Screen::Skills;
+                    self.skill_cursor = 0;
+                } else {
+                    self.status_message = Some("Return to camp to manage skills.".into());
+                }
+            }
+            Screen::Skills => {
+                self.screen = Screen::Main;
+            }
+            Screen::BossFight | Screen::Inventory => {
+                self.status_message = Some("Close the current screen first.".into());
+            }
+        }
+    }
+
+    /// Move skill cursor down.
+    pub fn skill_next(&mut self) {
+        let len = ALL_SKILL_IDS.len();
+        if len > 0 {
+            self.skill_cursor = (self.skill_cursor + 1) % len;
+        }
+    }
+
+    /// Move skill cursor up.
+    pub fn skill_prev(&mut self) {
+        let len = ALL_SKILL_IDS.len();
+        if len > 0 {
+            self.skill_cursor = if self.skill_cursor == 0 {
+                len - 1
+            } else {
+                self.skill_cursor - 1
+            };
+        }
+    }
+
+    /// Allocate a skill point to the currently selected skill.
+    pub fn skill_allocate(&mut self) {
+        if self.skill_cursor < ALL_SKILL_IDS.len() {
+            let id = ALL_SKILL_IDS[self.skill_cursor];
+            match self.skill_tree.allocate(id) {
+                Ok(()) => {
+                    let name = skill::skill_def(id)
+                        .map(|d| d.name.to_string())
+                        .unwrap_or_else(|| format!("{:?}", id));
+                    self.status_message = Some(format!("Learned {}!", name));
+                    self.events
+                        .push(GameEvent::SkillLearned { skill_name: name });
+                }
+                Err(e) => {
+                    self.status_message = Some(format!("Cannot learn: {}", e));
+                }
             }
         }
     }
@@ -272,7 +347,12 @@ impl App {
             self.explore_tick_count = self.explore_tick_count.wrapping_add(1);
         }
 
-        let eq_mods = self.inventory.total_modifiers();
+        let skill_effects = self.skill_tree.total_effects();
+
+        // Combine equipment and skill combat bonuses
+        let mut eq_mods = self.inventory.total_modifiers();
+        Self::append_skill_combat_mods(&skill_effects, &mut eq_mods);
+
         let combat_ctx = if self.game_mode == GameMode::Explore {
             Some(CombatContext {
                 profile: &mut self.combat_profile,
@@ -293,6 +373,7 @@ impl App {
                 &mut self.events,
                 self.game_mode,
                 Some(&mut ctx),
+                &skill_effects,
             );
         } else {
             tick::tick(
@@ -301,10 +382,43 @@ impl App {
                 &mut self.events,
                 self.game_mode,
                 None,
+                &skill_effects,
             );
         }
 
         self.process_events();
+    }
+
+    /// Convert skill combat bonuses into StatModifier entries and append them.
+    fn append_skill_combat_mods(
+        effects: &tuigotchi_core::skills::tree::AggregatedEffects,
+        mods: &mut Vec<tuigotchi_core::items::item::StatModifier>,
+    ) {
+        use tuigotchi_core::items::item::{StatModifier, StatType};
+        if effects.attack_bonus > 0.0 {
+            mods.push(StatModifier {
+                stat: StatType::Attack,
+                value: effects.attack_bonus,
+            });
+        }
+        if effects.defense_bonus > 0.0 {
+            mods.push(StatModifier {
+                stat: StatType::Defense,
+                value: effects.defense_bonus,
+            });
+        }
+        if effects.speed_bonus > 0.0 {
+            mods.push(StatModifier {
+                stat: StatType::Speed,
+                value: effects.speed_bonus,
+            });
+        }
+        if effects.max_hp_bonus > 0.0 {
+            mods.push(StatModifier {
+                stat: StatType::MaxHp,
+                value: effects.max_hp_bonus,
+            });
+        }
     }
 
     /// Navigate to next boss action.
@@ -416,7 +530,9 @@ impl App {
         let mut rng = rand::thread_rng();
         let level = self.combat_profile.level();
         let boss_data = boss::generate_boss(level, &mut rng);
-        let eq_mods = self.inventory.total_modifiers();
+        let skill_effects = self.skill_tree.total_effects();
+        let mut eq_mods = self.inventory.total_modifiers();
+        Self::append_skill_combat_mods(&skill_effects, &mut eq_mods);
         let pet_stats = battle::derive_combat_stats(
             self.pet.stats.happiness,
             self.pet.stats.energy,
@@ -470,7 +586,12 @@ impl App {
                     self.status_message = Some(format!("Lost to {enemy_name}... but survived!"));
                 }
                 GameEvent::LeveledUp { new_level } => {
-                    self.status_message = Some(format!("Level up! Now level {new_level}!"));
+                    self.skill_tree.add_point();
+                    self.events.push(GameEvent::SkillPointEarned);
+                    self.status_message = Some(format!(
+                        "Level up! Now level {new_level}! +1 skill point ({} available)",
+                        self.skill_tree.available_points(),
+                    ));
                 }
                 GameEvent::ItemDropped { item_name, rarity } => {
                     self.status_message = Some(format!("Loot: [{rarity}] {item_name}!"));
@@ -499,6 +620,12 @@ impl App {
                     // Handled below
                 }
                 GameEvent::EnteredExplore | GameEvent::EnteredCamp => {}
+                GameEvent::SkillPointEarned => {
+                    // Already handled in LeveledUp above
+                }
+                GameEvent::SkillLearned { skill_name } => {
+                    self.status_message = Some(format!("Learned {skill_name}!"));
+                }
                 _ => {}
             }
         }

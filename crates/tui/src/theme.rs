@@ -40,3 +40,9 @@ pub const BATTLE_LOG_COLOR: Color = Color::Yellow;
 
 // Explore
 pub const WIN_COUNT_STYLE: Style = Style::new().fg(Color::Green).add_modifier(Modifier::BOLD);
+
+// Skill category colors
+pub const COMBAT_SKILL_COLOR: Color = Color::Red;
+pub const SURVIVAL_SKILL_COLOR: Color = Color::Green;
+pub const FORTUNE_SKILL_COLOR: Color = Color::Yellow;
+pub const LOCKED_SKILL_COLOR: Color = Color::DarkGray;

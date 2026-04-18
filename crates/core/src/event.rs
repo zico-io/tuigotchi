@@ -42,6 +42,10 @@ pub enum GameEvent {
     BossDefeat { boss_name: String },
     /// Fled from a boss fight.
     FledFromBoss,
+    /// A skill point was earned (on level-up).
+    SkillPointEarned,
+    /// A skill was learned or ranked up.
+    SkillLearned { skill_name: String },
 }
 
 /// Simple event collector. Gather events during a tick, drain after processing.

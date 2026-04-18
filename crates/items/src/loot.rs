@@ -20,17 +20,25 @@ pub fn generate_loot(enemy_level: u32, rng: &mut impl Rng) -> Option<Item> {
         return None;
     }
 
+    Some(generate_loot_guaranteed(enemy_level, rng))
+}
+
+/// Generate a random item unconditionally (no drop-rate check).
+///
+/// Useful when the caller handles the drop-rate check externally
+/// (e.g., with skill-modified loot chance).
+pub fn generate_loot_guaranteed(enemy_level: u32, rng: &mut impl Rng) -> Item {
     let rarity = roll_rarity(rng);
     let slot = roll_slot(rng);
     let name = generate_name(slot, rng);
     let modifiers = generate_modifiers(slot, rarity, enemy_level, rng);
 
-    Some(Item {
+    Item {
         name,
         rarity,
         slot,
         modifiers,
-    })
+    }
 }
 
 fn roll_rarity(rng: &mut impl Rng) -> Rarity {
