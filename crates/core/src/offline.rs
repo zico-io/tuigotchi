@@ -122,6 +122,16 @@ pub fn simulate_offline(
                 }
             }
             summary.items_found = items_found;
+
+            // Check if enough battles for a boss (skip actual boss encounter offline)
+            if ctx.explore_state.battles_since_boss + battles >= 50 {
+                summary.boss_available = true;
+                // Reset counter as if the boss was skipped
+                ctx.explore_state.battles_since_boss =
+                    (ctx.explore_state.battles_since_boss + battles) % 50;
+            } else {
+                ctx.explore_state.battles_since_boss += battles;
+            }
         }
     }
 
@@ -140,6 +150,8 @@ pub struct OfflineSummary {
     pub xp_earned: u32,
     pub levels_gained: u32,
     pub items_found: u32,
+    /// Whether a boss encounter was available during offline time.
+    pub boss_available: bool,
 }
 
 impl OfflineSummary {
@@ -189,6 +201,10 @@ impl OfflineSummary {
                 self.items_found,
                 if self.items_found > 1 { "s" } else { "" }
             ));
+        }
+
+        if self.boss_available {
+            parts.push("A boss appeared while you were away!".into());
         }
 
         parts.join(" ")
@@ -289,6 +305,7 @@ mod tests {
             xp_earned: 0,
             levels_gained: 0,
             items_found: 0,
+            boss_available: false,
         };
 
         let msg = summary.message();
@@ -393,6 +410,7 @@ mod tests {
             xp_earned: 43200,
             levels_gained: 5,
             items_found: 0,
+            boss_available: false,
         };
 
         let msg = summary.message();

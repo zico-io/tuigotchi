@@ -2,10 +2,15 @@ use std::path::PathBuf;
 
 use tuigotchi_core::{
     action::{self, Action, ALL_ACTIONS},
-    combat::{combat_profile::CombatProfile, explore_state::ExploreState},
+    combat::{
+        battle, boss,
+        combat_profile::CombatProfile,
+        explore_state::ExploreState,
+        manual_combat::{BossEncounterState, TurnResult, ALL_COMBAT_ACTIONS},
+    },
     event::{EventBus, GameEvent},
     game_state::GameMode,
-    items::inventory::Inventory,
+    items::{inventory::Inventory, item::Rarity, loot},
     offline::{self, OfflineCombatContext},
     pet::Pet,
     save::{self, SaveData},
@@ -17,6 +22,7 @@ use tuigotchi_core::{
 pub enum Screen {
     Main,
     Inventory,
+    BossFight,
 }
 
 pub struct App {
@@ -32,6 +38,8 @@ pub struct App {
     pub inventory: Inventory,
     pub screen: Screen,
     pub inventory_cursor: usize,
+    pub boss_encounter: Option<BossEncounterState>,
+    pub boss_action_cursor: usize,
 }
 
 impl App {
@@ -49,6 +57,8 @@ impl App {
             inventory: Inventory::default(),
             screen: Screen::Main,
             inventory_cursor: 0,
+            boss_encounter: None,
+            boss_action_cursor: 0,
         }
     }
 
@@ -60,6 +70,7 @@ impl App {
         let mut combat_profile = data.combat_profile.unwrap_or_default();
         let mut explore_state = data.explore_state.unwrap_or_default();
         let mut inventory = data.inventory.unwrap_or_default();
+        let boss_encounter = data.boss_encounter;
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -84,6 +95,13 @@ impl App {
             None
         };
 
+        // Restore boss fight screen if we were in one
+        let screen = if boss_encounter.is_some() {
+            Screen::BossFight
+        } else {
+            Screen::Main
+        };
+
         Self {
             pet,
             events,
@@ -95,8 +113,10 @@ impl App {
             combat_profile,
             explore_state,
             inventory,
-            screen: Screen::Main,
+            screen,
             inventory_cursor: 0,
+            boss_encounter,
+            boss_action_cursor: 0,
         }
     }
 
@@ -114,6 +134,7 @@ impl App {
             Some(self.combat_profile.clone()),
             Some(self.explore_state.clone()),
             Some(self.inventory.clone()),
+            self.boss_encounter.clone(),
         );
         save::save(&data, &self.save_path)
     }
@@ -155,6 +176,9 @@ impl App {
             }
             Screen::Inventory => {
                 self.screen = Screen::Main;
+            }
+            Screen::BossFight => {
+                self.status_message = Some("Can't manage inventory during a boss fight!".into());
             }
         }
     }
@@ -276,8 +300,137 @@ impl App {
         self.process_events();
     }
 
+    /// Navigate to next boss action.
+    pub fn boss_next_action(&mut self) {
+        self.boss_action_cursor = (self.boss_action_cursor + 1) % ALL_COMBAT_ACTIONS.len();
+    }
+
+    /// Navigate to previous boss action.
+    pub fn boss_prev_action(&mut self) {
+        self.boss_action_cursor = if self.boss_action_cursor == 0 {
+            ALL_COMBAT_ACTIONS.len() - 1
+        } else {
+            self.boss_action_cursor - 1
+        };
+    }
+
+    /// Perform the currently selected boss action.
+    pub fn boss_perform_action(&mut self) {
+        let action = ALL_COMBAT_ACTIONS[self.boss_action_cursor];
+
+        let result = if let Some(ref mut encounter) = self.boss_encounter {
+            let mut rng = rand::thread_rng();
+            Some(encounter.process_turn(action, &mut rng))
+        } else {
+            None
+        };
+
+        if let Some(result) = result {
+            match result {
+                TurnResult::Continue => {}
+                TurnResult::Victory { xp_earned } => {
+                    let boss_name = self
+                        .boss_encounter
+                        .as_ref()
+                        .map(|e| e.boss.enemy.name.clone())
+                        .unwrap_or_default();
+
+                    // Add XP
+                    if self.combat_profile.add_xp(xp_earned) {
+                        self.events.push(GameEvent::LeveledUp {
+                            new_level: self.combat_profile.level(),
+                        });
+                    }
+
+                    // Generate guaranteed Rare+ loot
+                    let mut rng = rand::thread_rng();
+                    let level = self.combat_profile.level();
+                    let item = generate_boss_loot(level, &mut rng);
+                    let item_name = item.name.clone();
+                    let rarity = item.rarity.label().to_string();
+                    if self.inventory.add_item(item).is_ok() {
+                        self.events
+                            .push(GameEvent::ItemDropped { item_name, rarity });
+                    } else {
+                        self.events.push(GameEvent::InventoryFull);
+                    }
+
+                    self.events.push(GameEvent::BossDefeated {
+                        xp_earned,
+                        boss_name: boss_name.clone(),
+                    });
+
+                    self.status_message = Some(format!("Defeated {boss_name}! +{xp_earned} XP"));
+                    self.boss_encounter = None;
+                    self.game_mode = GameMode::Explore;
+                    self.screen = Screen::Main;
+                }
+                TurnResult::Defeat { .. } => {
+                    let boss_name = self
+                        .boss_encounter
+                        .as_ref()
+                        .map(|e| e.boss.enemy.name.clone())
+                        .unwrap_or_default();
+
+                    // Lose 10% XP
+                    self.combat_profile.lose_xp_percent(0.10);
+
+                    // Force needs_care
+                    self.pet.needs_care = true;
+
+                    self.events.push(GameEvent::BossDefeat {
+                        boss_name: boss_name.clone(),
+                    });
+
+                    self.status_message =
+                        Some(format!("{} was defeated by {boss_name}...", self.pet.name,));
+                    self.boss_encounter = None;
+                    self.game_mode = GameMode::Camp;
+                    self.screen = Screen::Main;
+                }
+                TurnResult::Fled => {
+                    self.events.push(GameEvent::FledFromBoss);
+
+                    let boss_name = self
+                        .boss_encounter
+                        .as_ref()
+                        .map(|e| e.boss.enemy.name.clone())
+                        .unwrap_or_default();
+                    self.status_message = Some(format!("Escaped from {boss_name}!"));
+                    self.boss_encounter = None;
+                    self.game_mode = GameMode::Explore;
+                    self.screen = Screen::Main;
+                }
+            }
+        }
+    }
+
+    fn start_boss_encounter(&mut self) {
+        let mut rng = rand::thread_rng();
+        let level = self.combat_profile.level();
+        let boss_data = boss::generate_boss(level, &mut rng);
+        let eq_mods = self.inventory.total_modifiers();
+        let pet_stats = battle::derive_combat_stats(
+            self.pet.stats.happiness,
+            self.pet.stats.energy,
+            self.pet.stats.health,
+            level,
+            &eq_mods,
+        );
+        let encounter = BossEncounterState::new(boss_data, pet_stats);
+        self.boss_encounter = Some(encounter);
+        self.game_mode = GameMode::BossFight;
+        self.screen = Screen::BossFight;
+        self.boss_action_cursor = 0;
+        self.status_message = Some("A powerful foe appears!".into());
+    }
+
     fn process_events(&mut self) {
-        for event in self.events.drain() {
+        let events = self.events.drain();
+        // Check if any event is BossAvailable before processing
+        let has_boss_available = events.iter().any(|e| matches!(e, GameEvent::BossAvailable));
+
+        for event in events {
             match event {
                 GameEvent::StatWarning(stat) => {
                     self.status_message = Some(format!("Warning: {} is critical!", stat));
@@ -322,9 +475,30 @@ impl App {
                     self.status_message =
                         Some("Inventory full! Discard items to pick up more loot.".into());
                 }
+                GameEvent::BossDefeated {
+                    xp_earned,
+                    boss_name,
+                } => {
+                    self.status_message = Some(format!("Defeated {boss_name}! +{xp_earned} XP"));
+                }
+                GameEvent::BossDefeat { boss_name } => {
+                    self.status_message =
+                        Some(format!("{} was defeated by {boss_name}...", self.pet.name));
+                }
+                GameEvent::FledFromBoss => {
+                    // Already handled in boss_perform_action
+                }
+                GameEvent::BossAvailable => {
+                    // Handled below
+                }
                 GameEvent::EnteredExplore | GameEvent::EnteredCamp => {}
                 _ => {}
             }
+        }
+
+        // Start boss encounter after processing all events
+        if has_boss_available && self.boss_encounter.is_none() {
+            self.start_boss_encounter();
         }
     }
 
@@ -340,5 +514,36 @@ fn action_past_tense(action: Action) -> &'static str {
         Action::Clean => "cleaned your pet",
         Action::Sleep => "put your pet to sleep",
         _ => "did something",
+    }
+}
+
+/// Generate a guaranteed Rare+ loot drop for a boss kill.
+fn generate_boss_loot(level: u32, rng: &mut impl rand::Rng) -> tuigotchi_core::items::item::Item {
+    use tuigotchi_core::items::item::{EquipmentSlot, Item, StatModifier, StatType};
+
+    // Try to roll a Rare item naturally
+    for _ in 0..500 {
+        if let Some(item) = loot::generate_loot(level, rng) {
+            if item.rarity == Rarity::Rare {
+                return item;
+            }
+        }
+    }
+
+    // Fallback: construct a guaranteed rare item
+    Item {
+        name: "Boss Trophy".into(),
+        rarity: Rarity::Rare,
+        slot: EquipmentSlot::Accessory,
+        modifiers: vec![
+            StatModifier {
+                stat: StatType::Attack,
+                value: 2.0 + level as f32 * 1.25,
+            },
+            StatModifier {
+                stat: StatType::Defense,
+                value: 2.0 + level as f32 * 1.25,
+            },
+        ],
     }
 }

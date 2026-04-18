@@ -50,6 +50,14 @@ impl CombatProfile {
     pub fn xp_to_next(&self) -> u32 {
         self.xp_to_next
     }
+
+    /// Lose a percentage of current XP. Never delevels.
+    ///
+    /// `percent` should be in `0.0..=1.0` (e.g., 0.10 for 10%).
+    pub fn lose_xp_percent(&mut self, percent: f32) {
+        let loss = (self.xp as f32 * percent).floor() as u32;
+        self.xp = self.xp.saturating_sub(loss);
+    }
 }
 
 #[cfg(test)]
@@ -103,5 +111,35 @@ mod tests {
         assert!(!leveled);
         assert_eq!(p.level(), 1);
         assert_eq!(p.xp(), 50);
+    }
+
+    #[test]
+    fn lose_xp_percent_reduces_xp() {
+        let mut p = CombatProfile::new();
+        p.add_xp(50);
+        p.lose_xp_percent(0.10);
+        assert_eq!(p.xp(), 45); // 50 - floor(50 * 0.1) = 45
+        assert_eq!(p.level(), 1);
+    }
+
+    #[test]
+    fn lose_xp_percent_does_not_delevel() {
+        let mut p = CombatProfile::new();
+        p.add_xp(150); // level 2, 50 xp
+        assert_eq!(p.level(), 2);
+        assert_eq!(p.xp(), 50);
+
+        p.lose_xp_percent(1.0); // lose all current XP
+        assert_eq!(p.level(), 2); // still level 2
+        assert_eq!(p.xp(), 0);
+    }
+
+    #[test]
+    fn lose_xp_percent_floors_at_zero() {
+        let mut p = CombatProfile::new();
+        // xp = 0, losing anything should stay 0
+        p.lose_xp_percent(0.5);
+        assert_eq!(p.xp(), 0);
+        assert_eq!(p.level(), 1);
     }
 }
