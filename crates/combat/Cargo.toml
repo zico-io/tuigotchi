@@ -12,3 +12,4 @@ description = "Combat system for tuigotchi — enemies, battles, leveling"
 [dependencies]
 serde.workspace = true
 rand.workspace = true
+tuigotchi-items.workspace = true

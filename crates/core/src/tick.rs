@@ -4,6 +4,7 @@ use tuigotchi_combat::{
     enemy,
     explore_state::ExploreState,
 };
+use tuigotchi_items::{inventory::Inventory, item::StatModifier, loot};
 
 use crate::{
     event::{EventBus, GameEvent},
@@ -20,6 +21,8 @@ const ENERGY_RATE: f32 = 0.0014;
 pub struct CombatContext<'a> {
     pub profile: &'a mut CombatProfile,
     pub explore_state: &'a mut ExploreState,
+    pub inventory: &'a mut Inventory,
+    pub equipment_modifiers: Vec<StatModifier>,
 }
 
 /// Advance the pet's state by `elapsed` seconds.
@@ -111,6 +114,7 @@ fn run_combat_tick(pet: &Pet, events: &mut EventBus, ctx: &mut CombatContext<'_>
         pet.stats.energy,
         pet.stats.health,
         level,
+        &ctx.equipment_modifiers,
     );
 
     let result = battle::resolve_auto_battle(&stats, &foe, &mut rng);
@@ -129,13 +133,24 @@ fn run_combat_tick(pet: &Pet, events: &mut EventBus, ctx: &mut CombatContext<'_>
 
             events.push(GameEvent::BattleWon {
                 xp_earned,
-                enemy_name: foe.name,
+                enemy_name: foe.name.clone(),
             });
 
             if ctx.profile.add_xp(xp_earned) {
                 events.push(GameEvent::LeveledUp {
                     new_level: ctx.profile.level(),
                 });
+            }
+
+            // Attempt loot drop
+            if let Some(item) = loot::generate_loot(level, &mut rng) {
+                let item_name = item.name.clone();
+                let rarity = item.rarity.label().to_string();
+                if ctx.inventory.add_item(item).is_ok() {
+                    events.push(GameEvent::ItemDropped { item_name, rarity });
+                } else {
+                    events.push(GameEvent::InventoryFull);
+                }
             }
         }
         BattleResult::Defeat { damage_taken } => {
@@ -156,6 +171,7 @@ fn run_combat_tick(pet: &Pet, events: &mut EventBus, ctx: &mut CombatContext<'_>
 mod tests {
     use super::*;
     use crate::pet::{Pet, PetStage};
+    use tuigotchi_items::inventory::Inventory;
 
     #[test]
     fn stat_decay_over_time() {
@@ -265,6 +281,8 @@ mod tests {
         let mut events = EventBus::new();
         let mut profile = CombatProfile::new();
         let mut explore = ExploreState::default();
+        let mut inventory = Inventory::new(20);
+        let eq_mods = inventory.total_modifiers();
 
         tick(
             &mut pet,
@@ -274,6 +292,8 @@ mod tests {
             Some(&mut CombatContext {
                 profile: &mut profile,
                 explore_state: &mut explore,
+                inventory: &mut inventory,
+                equipment_modifiers: eq_mods,
             }),
         );
 
@@ -288,5 +308,40 @@ mod tests {
         assert!(has_battle);
         assert!(explore.battles_won + explore.battles_lost > 0);
         assert!(explore.last_battle_log.is_some());
+    }
+
+    #[test]
+    fn combat_tick_can_produce_loot() {
+        let mut pet = Pet::new("Test");
+        pet.stage = PetStage::Adult;
+        pet.age_seconds = 600;
+        let mut inventory = Inventory::new(100);
+
+        // Run many ticks to get at least one loot drop
+        for _ in 0..50 {
+            let mut events = EventBus::new();
+            let mut profile = CombatProfile::new();
+            let mut explore = ExploreState::default();
+            let eq_mods = inventory.total_modifiers();
+
+            tick(
+                &mut pet,
+                1,
+                &mut events,
+                GameMode::Explore,
+                Some(&mut CombatContext {
+                    profile: &mut profile,
+                    explore_state: &mut explore,
+                    inventory: &mut inventory,
+                    equipment_modifiers: eq_mods,
+                }),
+            );
+        }
+
+        // With 50 battles and 30% drop rate, we should have some items
+        assert!(
+            !inventory.is_empty(),
+            "should have received at least one loot drop in 50 battles"
+        );
     }
 }

@@ -1,5 +1,6 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use tuigotchi_items::item::StatModifier;
 
 use crate::enemy::Enemy;
 
@@ -12,15 +13,34 @@ pub struct CombatStats {
     pub max_hp: f32,
 }
 
-/// Derive combat stats from the pet's care stats and combat level.
-pub fn derive_combat_stats(happiness: f32, energy: f32, health: f32, level: u32) -> CombatStats {
+/// Derive combat stats from the pet's care stats, combat level, and equipment modifiers.
+pub fn derive_combat_stats(
+    happiness: f32,
+    energy: f32,
+    health: f32,
+    level: u32,
+    equipment_modifiers: &[StatModifier],
+) -> CombatStats {
     let lv = level as f32;
-    CombatStats {
+    let mut stats = CombatStats {
         attack: 10.0 + (happiness + energy) * 0.1 + lv * 2.0,
         defense: 5.0 + health * 0.15 + lv * 1.5,
         speed: 5.0 + energy * 0.1 + lv * 1.0,
         max_hp: 50.0 + health * 0.5 + lv * 5.0,
+    };
+
+    for m in equipment_modifiers {
+        #[allow(unreachable_patterns)]
+        match m.stat {
+            tuigotchi_items::item::StatType::Attack => stats.attack += m.value,
+            tuigotchi_items::item::StatType::Defense => stats.defense += m.value,
+            tuigotchi_items::item::StatType::Speed => stats.speed += m.value,
+            tuigotchi_items::item::StatType::MaxHp => stats.max_hp += m.value,
+            _ => {}
+        }
     }
+
+    stats
 }
 
 /// Outcome of an auto-battle.
@@ -96,7 +116,7 @@ mod tests {
 
     #[test]
     fn derive_combat_stats_produces_sane_values() {
-        let stats = derive_combat_stats(50.0, 100.0, 100.0, 1);
+        let stats = derive_combat_stats(50.0, 100.0, 100.0, 1, &[]);
         assert!(stats.attack > 10.0);
         assert!(stats.defense > 5.0);
         assert!(stats.speed > 5.0);
@@ -105,7 +125,7 @@ mod tests {
 
     #[test]
     fn auto_battle_against_weak_enemy_is_victory() {
-        let stats = derive_combat_stats(50.0, 100.0, 100.0, 5);
+        let stats = derive_combat_stats(50.0, 100.0, 100.0, 5, &[]);
         let weak_enemy = Enemy {
             name: "Slime".into(),
             hp: 10.0,
@@ -120,8 +140,8 @@ mod tests {
 
     #[test]
     fn combat_stats_scale_with_level() {
-        let low = derive_combat_stats(50.0, 50.0, 50.0, 1);
-        let high = derive_combat_stats(50.0, 50.0, 50.0, 10);
+        let low = derive_combat_stats(50.0, 50.0, 50.0, 1, &[]);
+        let high = derive_combat_stats(50.0, 50.0, 50.0, 10, &[]);
         assert!(high.attack > low.attack);
         assert!(high.defense > low.defense);
         assert!(high.max_hp > low.max_hp);

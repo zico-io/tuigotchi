@@ -20,3 +20,8 @@ pub const SELECTED_STYLE: Style = Style::new().fg(Color::Cyan).add_modifier(Modi
 pub const STATUS_STYLE: Style = Style::new()
     .fg(Color::DarkGray)
     .add_modifier(Modifier::ITALIC);
+
+// Rarity colors
+pub const COMMON_COLOR: Color = Color::White;
+pub const UNCOMMON_COLOR: Color = Color::Green;
+pub const RARE_COLOR: Color = Color::Blue;
