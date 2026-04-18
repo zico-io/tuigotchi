@@ -11,3 +11,6 @@ pub use tuigotchi_combat as combat;
 
 /// Re-export the items crate for convenience.
 pub use tuigotchi_items as items;
+
+/// Re-export the skills crate for convenience.
+pub use tuigotchi_skills as skills;

@@ -5,6 +5,7 @@ use tuigotchi_combat::{
     combat_profile::CombatProfile, explore_state::ExploreState, manual_combat::BossEncounterState,
 };
 use tuigotchi_items::inventory::Inventory;
+use tuigotchi_skills::tree::SkillTree;
 
 use crate::{game_state::GameMode, pet::Pet};
 
@@ -33,9 +34,13 @@ pub struct SaveData {
     /// In-progress boss encounter, if any.
     #[serde(default)]
     pub boss_encounter: Option<BossEncounterState>,
+    /// Skill tree progression. None for pre-skills saves.
+    #[serde(default)]
+    pub skill_tree: Option<SkillTree>,
 }
 
 impl SaveData {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         pet: Pet,
         now: u64,
@@ -44,6 +49,7 @@ impl SaveData {
         explore_state: Option<ExploreState>,
         inventory: Option<Inventory>,
         boss_encounter: Option<BossEncounterState>,
+        skill_tree: Option<SkillTree>,
     ) -> Self {
         Self {
             version: SAVE_VERSION,
@@ -54,6 +60,7 @@ impl SaveData {
             explore_state,
             inventory,
             boss_encounter,
+            skill_tree,
         }
     }
 }
@@ -134,6 +141,7 @@ mod tests {
             pet.clone(),
             1000,
             GameMode::default(),
+            None,
             None,
             None,
             None,

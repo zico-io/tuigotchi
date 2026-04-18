@@ -50,7 +50,9 @@ fn draw_actions(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
 
     let paragraph = Paragraph::new(Line::from(items)).block(
         Block::default()
-            .title(" Actions [←/→ select, Enter perform, Tab explore, i inventory, q quit] ")
+            .title(
+                " Actions [←/→ select, Enter perform, Tab explore, i inventory, s skills, q quit] ",
+            )
             .title_style(theme::TITLE_STYLE)
             .borders(Borders::ALL)
             .border_style(theme::BORDER_STYLE),

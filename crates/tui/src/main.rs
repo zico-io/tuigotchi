@@ -91,6 +91,14 @@ fn run() -> io::Result<()> {
                             KeyCode::Char('q') => app.quit(),
                             _ => {}
                         },
+                        Screen::Skills => match key.code {
+                            KeyCode::Char('s') | KeyCode::Esc => app.toggle_skills(),
+                            KeyCode::Char('j') | KeyCode::Down => app.skill_next(),
+                            KeyCode::Char('k') | KeyCode::Up => app.skill_prev(),
+                            KeyCode::Enter | KeyCode::Char(' ') => app.skill_allocate(),
+                            KeyCode::Char('q') => app.quit(),
+                            _ => {}
+                        },
                         Screen::Main => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.quit(),
                             KeyCode::Left | KeyCode::Char('h') => app.prev_action(),
@@ -98,6 +106,7 @@ fn run() -> io::Result<()> {
                             KeyCode::Enter | KeyCode::Char(' ') => app.perform_action(),
                             KeyCode::Tab => app.toggle_mode(),
                             KeyCode::Char('i') => app.toggle_inventory(),
+                            KeyCode::Char('s') => app.toggle_skills(),
                             _ => {}
                         },
                     }

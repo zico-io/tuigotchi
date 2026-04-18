@@ -5,6 +5,9 @@ use tuigotchi_combat::{
     explore_state::ExploreState,
 };
 use tuigotchi_items::{inventory::Inventory, item::StatModifier, loot};
+use tuigotchi_skills::tree::AggregatedEffects;
+
+use rand::Rng;
 
 use crate::{
     event::{EventBus, GameEvent},
@@ -33,6 +36,7 @@ pub fn tick(
     events: &mut EventBus,
     game_mode: GameMode,
     combat: Option<&mut CombatContext<'_>>,
+    skill_effects: &AggregatedEffects,
 ) {
     if !pet.alive {
         return;
@@ -40,10 +44,10 @@ pub fn tick(
 
     let dt = elapsed as f32;
 
-    // Stat decay (applies in all modes)
-    pet.stats.hunger += HUNGER_RATE * dt;
-    pet.stats.happiness -= HAPPINESS_RATE * dt;
-    pet.stats.energy -= ENERGY_RATE * dt;
+    // Stat decay (applies in all modes), modified by skill effects
+    pet.stats.hunger += HUNGER_RATE * dt * skill_effects.hunger_rate_multiplier;
+    pet.stats.happiness -= HAPPINESS_RATE * dt * skill_effects.happiness_rate_multiplier;
+    pet.stats.energy -= ENERGY_RATE * dt * skill_effects.energy_rate_multiplier;
 
     pet.stats.clamp();
 
@@ -70,7 +74,7 @@ pub fn tick(
         GameMode::Explore => {
             if let Some(ctx) = combat {
                 if !pet.needs_care {
-                    run_combat_tick(pet, events, ctx);
+                    run_combat_tick(pet, events, ctx, skill_effects);
                 }
             }
         }
@@ -105,7 +109,12 @@ pub fn tick(
 }
 
 /// Run a single combat encounter during an explore tick.
-fn run_combat_tick(pet: &Pet, events: &mut EventBus, ctx: &mut CombatContext<'_>) {
+fn run_combat_tick(
+    pet: &Pet,
+    events: &mut EventBus,
+    ctx: &mut CombatContext<'_>,
+    skill_effects: &AggregatedEffects,
+) {
     let mut rng = rand::thread_rng();
     let level = ctx.profile.level();
     let foe = enemy::generate_enemy(level, &mut rng);
@@ -124,27 +133,32 @@ fn run_combat_tick(pet: &Pet, events: &mut EventBus, ctx: &mut CombatContext<'_>
             xp_earned,
             damage_taken,
         } => {
+            // Apply XP multiplier from skills
+            let effective_xp = (xp_earned as f32 * skill_effects.xp_multiplier).round() as u32;
+
             ctx.explore_state.battles_won += 1;
-            ctx.explore_state.total_xp_earned += xp_earned;
+            ctx.explore_state.total_xp_earned += effective_xp;
             ctx.explore_state.battles_since_boss += 1;
             ctx.explore_state.last_battle_log = Some(format!(
                 "Defeated {}! +{} XP (took {:.0} damage)",
-                foe.name, xp_earned, damage_taken,
+                foe.name, effective_xp, damage_taken,
             ));
 
             events.push(GameEvent::BattleWon {
-                xp_earned,
+                xp_earned: effective_xp,
                 enemy_name: foe.name.clone(),
             });
 
-            if ctx.profile.add_xp(xp_earned) {
+            if ctx.profile.add_xp(effective_xp) {
                 events.push(GameEvent::LeveledUp {
                     new_level: ctx.profile.level(),
                 });
             }
 
-            // Attempt loot drop
-            if let Some(item) = loot::generate_loot(level, &mut rng) {
+            // Attempt loot drop with skill bonus
+            let loot_chance = (0.30 + skill_effects.loot_chance_bonus).min(1.0);
+            if rng.gen_bool(loot_chance as f64) {
+                let item = loot::generate_loot_guaranteed(level, &mut rng);
                 let item_name = item.name.clone();
                 let rarity = item.rarity.label().to_string();
                 if ctx.inventory.add_item(item).is_ok() {
@@ -180,6 +194,10 @@ mod tests {
     use crate::pet::{Pet, PetStage};
     use tuigotchi_items::inventory::Inventory;
 
+    fn default_effects() -> AggregatedEffects {
+        AggregatedEffects::default()
+    }
+
     #[test]
     fn stat_decay_over_time() {
         let mut pet = Pet::new("Test");
@@ -187,7 +205,14 @@ mod tests {
         let mut events = EventBus::new();
 
         let hunger_before = pet.stats.hunger;
-        tick(&mut pet, 1000, &mut events, GameMode::Camp, None);
+        tick(
+            &mut pet,
+            1000,
+            &mut events,
+            GameMode::Camp,
+            None,
+            &default_effects(),
+        );
 
         assert!(pet.stats.hunger > hunger_before);
         assert!(pet.stats.happiness < 50.0);
@@ -203,7 +228,14 @@ mod tests {
         let mut events = EventBus::new();
 
         // Push hunger past 90 threshold
-        tick(&mut pet, 1000, &mut events, GameMode::Camp, None);
+        tick(
+            &mut pet,
+            1000,
+            &mut events,
+            GameMode::Camp,
+            None,
+            &default_effects(),
+        );
 
         assert!(pet.alive); // no death from starvation in v2
         assert!(pet.needs_care);
@@ -221,7 +253,14 @@ mod tests {
         let mut events = EventBus::new();
 
         // After 1 hour (3600s), stats should have changed modestly
-        tick(&mut pet, 3600, &mut events, GameMode::Camp, None);
+        tick(
+            &mut pet,
+            3600,
+            &mut events,
+            GameMode::Camp,
+            None,
+            &default_effects(),
+        );
 
         // Hunger: 50 + 0.0035 * 3600 = 62.6
         assert!((pet.stats.hunger - 62.6).abs() < 0.1);
@@ -240,7 +279,14 @@ mod tests {
         pet.age_seconds = 29;
         let mut events = EventBus::new();
 
-        tick(&mut pet, 1, &mut events, GameMode::Camp, None);
+        tick(
+            &mut pet,
+            1,
+            &mut events,
+            GameMode::Camp,
+            None,
+            &default_effects(),
+        );
 
         assert_eq!(pet.stage, PetStage::Baby);
         assert!(events
@@ -258,7 +304,14 @@ mod tests {
         let mut events = EventBus::new();
 
         // Push hunger past 90 threshold while exploring
-        tick(&mut pet, 1000, &mut events, GameMode::Explore, None);
+        tick(
+            &mut pet,
+            1000,
+            &mut events,
+            GameMode::Explore,
+            None,
+            &default_effects(),
+        );
 
         assert!(pet.needs_care);
         let drained = events.drain();
@@ -274,7 +327,14 @@ mod tests {
         let mut events = EventBus::new();
 
         let hunger_before = pet.stats.hunger;
-        tick(&mut pet, 100, &mut events, GameMode::Explore, None);
+        tick(
+            &mut pet,
+            100,
+            &mut events,
+            GameMode::Explore,
+            None,
+            &default_effects(),
+        );
 
         // Decay still applies in Explore mode
         assert!(pet.stats.hunger > hunger_before);
@@ -302,6 +362,7 @@ mod tests {
                 inventory: &mut inventory,
                 equipment_modifiers: eq_mods,
             }),
+            &default_effects(),
         );
 
         let drained = events.drain();
@@ -342,6 +403,7 @@ mod tests {
                     inventory: &mut inventory,
                     equipment_modifiers: eq_mods,
                 }),
+                &default_effects(),
             );
         }
 
@@ -379,6 +441,7 @@ mod tests {
                     inventory: &mut inventory,
                     equipment_modifiers: eq_mods,
                 }),
+                &default_effects(),
             );
 
             for event in events.drain() {
@@ -396,5 +459,24 @@ mod tests {
             explore.battles_won,
             explore.battles_since_boss,
         );
+    }
+
+    #[test]
+    fn skill_decay_modifiers_reduce_decay() {
+        let mut pet = Pet::new("Test");
+        pet.stage = PetStage::Adult;
+        pet.age_seconds = 600;
+        let mut events = EventBus::new();
+
+        // Half hunger rate
+        let effects = AggregatedEffects {
+            hunger_rate_multiplier: 0.5,
+            ..AggregatedEffects::default()
+        };
+
+        tick(&mut pet, 3600, &mut events, GameMode::Camp, None, &effects);
+
+        // Hunger: 50 + 0.0035 * 0.5 * 3600 = 56.3
+        assert!((pet.stats.hunger - 56.3).abs() < 0.1);
     }
 }

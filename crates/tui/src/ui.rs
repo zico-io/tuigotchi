@@ -16,5 +16,6 @@ pub fn draw(frame: &mut ratatui::Frame, app: &App) {
         }
         Screen::Inventory => screens::inventory::draw(frame, app),
         Screen::BossFight => screens::boss_fight::draw(frame, app),
+        Screen::Skills => screens::skills::draw(frame, app),
     }
 }

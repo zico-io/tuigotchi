@@ -618,6 +618,7 @@ dependencies = [
  "serde_json",
  "tuigotchi-combat",
  "tuigotchi-items",
+ "tuigotchi-skills",
 ]
 
 [[package]]
@@ -625,6 +626,14 @@ name = "tuigotchi-items"
 version = "0.1.0"
 dependencies = [
  "rand",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "tuigotchi-skills"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
 ]
