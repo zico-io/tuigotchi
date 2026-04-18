@@ -16,7 +16,7 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 use tuigotchi_core::save;
 
-use app::App;
+use app::{App, Screen};
 
 const TICK_RATE: Duration = Duration::from_secs(1);
 
@@ -72,13 +72,26 @@ fn run() -> io::Result<()> {
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.quit(),
-                        KeyCode::Left | KeyCode::Char('h') => app.prev_action(),
-                        KeyCode::Right | KeyCode::Char('l') => app.next_action(),
-                        KeyCode::Enter | KeyCode::Char(' ') => app.perform_action(),
-                        KeyCode::Tab => app.toggle_mode(),
-                        _ => {}
+                    match app.screen {
+                        Screen::Inventory => match key.code {
+                            KeyCode::Char('i') | KeyCode::Esc => app.toggle_inventory(),
+                            KeyCode::Char('j') | KeyCode::Down => app.inventory_next(),
+                            KeyCode::Char('k') | KeyCode::Up => app.inventory_prev(),
+                            KeyCode::Char('e') | KeyCode::Enter => app.inventory_equip(),
+                            KeyCode::Char('u') => app.inventory_unequip(),
+                            KeyCode::Char('d') => app.inventory_discard(),
+                            KeyCode::Char('q') => app.quit(),
+                            _ => {}
+                        },
+                        Screen::Main => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.quit(),
+                            KeyCode::Left | KeyCode::Char('h') => app.prev_action(),
+                            KeyCode::Right | KeyCode::Char('l') => app.next_action(),
+                            KeyCode::Enter | KeyCode::Char(' ') => app.perform_action(),
+                            KeyCode::Tab => app.toggle_mode(),
+                            KeyCode::Char('i') => app.toggle_inventory(),
+                            _ => {}
+                        },
                     }
                 }
             }

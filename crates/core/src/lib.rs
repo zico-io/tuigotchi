@@ -8,3 +8,6 @@ pub mod tick;
 
 /// Re-export the combat crate for convenience.
 pub use tuigotchi_combat as combat;
+
+/// Re-export the items crate for convenience.
+pub use tuigotchi_items as items;

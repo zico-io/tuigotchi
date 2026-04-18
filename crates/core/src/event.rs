@@ -28,6 +28,12 @@ pub enum GameEvent {
     BattleLost { enemy_name: String },
     /// Leveled up!
     LeveledUp { new_level: u32 },
+    /// An item was dropped by a defeated enemy.
+    ItemDropped { item_name: String, rarity: String },
+    /// An item was equipped.
+    ItemEquipped { item_name: String, slot: String },
+    /// Inventory is full — loot was discarded.
+    InventoryFull,
 }
 
 /// Simple event collector. Gather events during a tick, drain after processing.

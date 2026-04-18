@@ -2,6 +2,7 @@ use std::{fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
 use tuigotchi_combat::{combat_profile::CombatProfile, explore_state::ExploreState};
+use tuigotchi_items::inventory::Inventory;
 
 use crate::{game_state::GameMode, pet::Pet};
 
@@ -24,6 +25,9 @@ pub struct SaveData {
     /// Explore session statistics. None for pre-combat saves.
     #[serde(default)]
     pub explore_state: Option<ExploreState>,
+    /// Player inventory. None for pre-items saves.
+    #[serde(default)]
+    pub inventory: Option<Inventory>,
 }
 
 impl SaveData {
@@ -33,6 +37,7 @@ impl SaveData {
         game_mode: GameMode,
         combat_profile: Option<CombatProfile>,
         explore_state: Option<ExploreState>,
+        inventory: Option<Inventory>,
     ) -> Self {
         Self {
             version: SAVE_VERSION,
@@ -41,6 +46,7 @@ impl SaveData {
             game_mode,
             combat_profile,
             explore_state,
+            inventory,
         }
     }
 }
@@ -117,7 +123,7 @@ mod tests {
         let _ = fs::remove_dir(&dir);
 
         let pet = Pet::new("TestPet");
-        let data = SaveData::new(pet.clone(), 1000, GameMode::default(), None, None);
+        let data = SaveData::new(pet.clone(), 1000, GameMode::default(), None, None, None);
 
         save(&data, &path).expect("save should succeed");
         let loaded = load(&path).expect("load should succeed");

@@ -5,11 +5,19 @@ use tuigotchi_core::{
     combat::{combat_profile::CombatProfile, explore_state::ExploreState},
     event::{EventBus, GameEvent},
     game_state::GameMode,
+    items::inventory::Inventory,
     offline::{self, OfflineCombatContext},
     pet::Pet,
     save::{self, SaveData},
     tick::{self, CombatContext},
 };
+
+/// Which screen the TUI is currently displaying.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Screen {
+    Main,
+    Inventory,
+}
 
 pub struct App {
     pub pet: Pet,
@@ -21,6 +29,9 @@ pub struct App {
     pub game_mode: GameMode,
     pub combat_profile: CombatProfile,
     pub explore_state: ExploreState,
+    pub inventory: Inventory,
+    pub screen: Screen,
+    pub inventory_cursor: usize,
 }
 
 impl App {
@@ -35,6 +46,9 @@ impl App {
             game_mode: GameMode::default(),
             combat_profile: CombatProfile::new(),
             explore_state: ExploreState::default(),
+            inventory: Inventory::default(),
+            screen: Screen::Main,
+            inventory_cursor: 0,
         }
     }
 
@@ -45,6 +59,7 @@ impl App {
         let game_mode = data.game_mode;
         let mut combat_profile = data.combat_profile.unwrap_or_default();
         let mut explore_state = data.explore_state.unwrap_or_default();
+        let mut inventory = data.inventory.unwrap_or_default();
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -59,6 +74,7 @@ impl App {
             Some(&mut OfflineCombatContext {
                 profile: &mut combat_profile,
                 explore_state: &mut explore_state,
+                inventory: &mut inventory,
                 game_mode,
             }),
         );
@@ -78,6 +94,9 @@ impl App {
             game_mode,
             combat_profile,
             explore_state,
+            inventory,
+            screen: Screen::Main,
+            inventory_cursor: 0,
         }
     }
 
@@ -94,6 +113,7 @@ impl App {
             self.game_mode,
             Some(self.combat_profile.clone()),
             Some(self.explore_state.clone()),
+            Some(self.inventory.clone()),
         );
         save::save(&data, &self.save_path)
     }
@@ -122,6 +142,82 @@ impl App {
         }
     }
 
+    /// Toggle the inventory screen (only available in Camp mode).
+    pub fn toggle_inventory(&mut self) {
+        match self.screen {
+            Screen::Main => {
+                if self.game_mode == GameMode::Camp {
+                    self.screen = Screen::Inventory;
+                    self.inventory_cursor = 0;
+                } else {
+                    self.status_message = Some("Return to camp to manage inventory.".into());
+                }
+            }
+            Screen::Inventory => {
+                self.screen = Screen::Main;
+            }
+        }
+    }
+
+    /// Move inventory cursor down.
+    pub fn inventory_next(&mut self) {
+        let len = self.inventory.len();
+        if len > 0 {
+            self.inventory_cursor = (self.inventory_cursor + 1) % len;
+        }
+    }
+
+    /// Move inventory cursor up.
+    pub fn inventory_prev(&mut self) {
+        let len = self.inventory.len();
+        if len > 0 {
+            self.inventory_cursor = if self.inventory_cursor == 0 {
+                len - 1
+            } else {
+                self.inventory_cursor - 1
+            };
+        }
+    }
+
+    /// Equip the currently selected item.
+    pub fn inventory_equip(&mut self) {
+        if self.inventory_cursor < self.inventory.len() {
+            let item_name = self.inventory.items()[self.inventory_cursor].name.clone();
+            let slot = self.inventory.items()[self.inventory_cursor]
+                .slot
+                .label()
+                .to_string();
+            if self.inventory.equip(self.inventory_cursor).is_ok() {
+                self.status_message = Some(format!("Equipped {item_name}!"));
+                self.events
+                    .push(GameEvent::ItemEquipped { item_name, slot });
+            }
+        }
+    }
+
+    /// Unequip the currently selected item's slot.
+    pub fn inventory_unequip(&mut self) {
+        if self.inventory_cursor < self.inventory.len() {
+            let slot = self.inventory.items()[self.inventory_cursor].slot;
+            self.inventory.unequip(slot);
+            self.status_message = Some("Unequipped item.".into());
+        }
+    }
+
+    /// Discard the currently selected item.
+    pub fn inventory_discard(&mut self) {
+        if self.inventory_cursor < self.inventory.len() {
+            let item = self.inventory.remove_item(self.inventory_cursor);
+            if let Some(item) = item {
+                self.status_message = Some(format!("Discarded {}.", item.name));
+            }
+            // Adjust cursor if it's now out of bounds
+            if !self.inventory.is_empty() && self.inventory_cursor >= self.inventory.len() {
+                self.inventory_cursor = self.inventory.len() - 1;
+            }
+        }
+    }
+
     pub fn current_action(&self) -> Action {
         ALL_ACTIONS[self.selected_action]
     }
@@ -145,10 +241,13 @@ impl App {
     }
 
     pub fn tick(&mut self, elapsed_secs: u64) {
+        let eq_mods = self.inventory.total_modifiers();
         let combat_ctx = if self.game_mode == GameMode::Explore {
             Some(CombatContext {
                 profile: &mut self.combat_profile,
                 explore_state: &mut self.explore_state,
+                inventory: &mut self.inventory,
+                equipment_modifiers: eq_mods,
             })
         } else {
             None
@@ -212,6 +311,16 @@ impl App {
                 }
                 GameEvent::LeveledUp { new_level } => {
                     self.status_message = Some(format!("Level up! Now level {new_level}!"));
+                }
+                GameEvent::ItemDropped { item_name, rarity } => {
+                    self.status_message = Some(format!("Loot: [{rarity}] {item_name}!"));
+                }
+                GameEvent::ItemEquipped { item_name, slot } => {
+                    self.status_message = Some(format!("Equipped {item_name} in {slot} slot."));
+                }
+                GameEvent::InventoryFull => {
+                    self.status_message =
+                        Some("Inventory full! Discard items to pick up more loot.".into());
                 }
                 GameEvent::EnteredExplore | GameEvent::EnteredCamp => {}
                 _ => {}

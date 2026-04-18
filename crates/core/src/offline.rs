@@ -1,4 +1,5 @@
 use tuigotchi_combat::{combat_profile::CombatProfile, explore_state::ExploreState};
+use tuigotchi_items::inventory::Inventory;
 
 use crate::{
     event::{EventBus, GameEvent},
@@ -15,6 +16,7 @@ const ENERGY_RATE: f32 = 0.0014;
 pub struct OfflineCombatContext<'a> {
     pub profile: &'a mut CombatProfile,
     pub explore_state: &'a mut ExploreState,
+    pub inventory: &'a mut Inventory,
     pub game_mode: GameMode,
 }
 
@@ -104,6 +106,22 @@ pub fn simulate_offline(
                     new_level: level_after,
                 });
             }
+
+            // Simplified offline loot: ~30% of battles produce items
+            let estimated_drops = (battles as f32 * 0.30) as u32;
+            let mut rng = rand::thread_rng();
+            let mut items_found = 0u32;
+            for _ in 0..estimated_drops {
+                if ctx.inventory.is_full() {
+                    break;
+                }
+                if let Some(item) = tuigotchi_items::loot::generate_loot(level, &mut rng) {
+                    if ctx.inventory.add_item(item).is_ok() {
+                        items_found += 1;
+                    }
+                }
+            }
+            summary.items_found = items_found;
         }
     }
 
@@ -121,6 +139,7 @@ pub struct OfflineSummary {
     pub battles_won: u32,
     pub xp_earned: u32,
     pub levels_gained: u32,
+    pub items_found: u32,
 }
 
 impl OfflineSummary {
@@ -164,6 +183,14 @@ impl OfflineSummary {
             ));
         }
 
+        if self.items_found > 0 {
+            parts.push(format!(
+                "Found {} item{}!",
+                self.items_found,
+                if self.items_found > 1 { "s" } else { "" }
+            ));
+        }
+
         parts.join(" ")
     }
 }
@@ -172,6 +199,7 @@ impl OfflineSummary {
 mod tests {
     use super::*;
     use crate::pet::{Pet, PetStage};
+    use tuigotchi_items::inventory::Inventory;
 
     #[test]
     fn offline_one_hour_decay() {
@@ -260,6 +288,7 @@ mod tests {
             battles_won: 0,
             xp_earned: 0,
             levels_gained: 0,
+            items_found: 0,
         };
 
         let msg = summary.message();
@@ -275,6 +304,7 @@ mod tests {
         let mut events = EventBus::new();
         let mut profile = CombatProfile::new();
         let mut explore = ExploreState::default();
+        let mut inventory = Inventory::new(100);
 
         let summary = simulate_offline(
             &mut pet,
@@ -283,6 +313,7 @@ mod tests {
             Some(&mut OfflineCombatContext {
                 profile: &mut profile,
                 explore_state: &mut explore,
+                inventory: &mut inventory,
                 game_mode: GameMode::Explore,
             }),
         );
@@ -303,6 +334,7 @@ mod tests {
         let mut events = EventBus::new();
         let mut profile = CombatProfile::new();
         let mut explore = ExploreState::default();
+        let mut inventory = Inventory::new(20);
 
         let summary = simulate_offline(
             &mut pet,
@@ -311,12 +343,42 @@ mod tests {
             Some(&mut OfflineCombatContext {
                 profile: &mut profile,
                 explore_state: &mut explore,
+                inventory: &mut inventory,
                 game_mode: GameMode::Camp,
             }),
         );
 
         assert_eq!(summary.battles_won, 0);
         assert_eq!(summary.xp_earned, 0);
+    }
+
+    #[test]
+    fn offline_combat_generates_loot() {
+        let mut pet = Pet::new("Test");
+        pet.stage = PetStage::Adult;
+        pet.age_seconds = 600;
+        let mut events = EventBus::new();
+        let mut profile = CombatProfile::new();
+        let mut explore = ExploreState::default();
+        let mut inventory = Inventory::new(100);
+
+        let summary = simulate_offline(
+            &mut pet,
+            1000,
+            &mut events,
+            Some(&mut OfflineCombatContext {
+                profile: &mut profile,
+                explore_state: &mut explore,
+                inventory: &mut inventory,
+                game_mode: GameMode::Explore,
+            }),
+        );
+
+        assert!(
+            summary.items_found > 0,
+            "1000 battles should produce some loot"
+        );
+        assert_eq!(inventory.len(), summary.items_found as usize);
     }
 
     #[test]
@@ -330,6 +392,7 @@ mod tests {
             battles_won: 3600,
             xp_earned: 43200,
             levels_gained: 5,
+            items_found: 0,
         };
 
         let msg = summary.message();

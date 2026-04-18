@@ -1,5 +1,5 @@
 [package]
-name = "tuigotchi-core"
+name = "tuigotchi-items"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,11 +7,11 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Core game logic for tuigotchi — no TUI dependencies"
+description = "Item and inventory system for tuigotchi — loot drops, equipment, modifiers"
 
 [dependencies]
 serde.workspace = true
-serde_json.workspace = true
-tuigotchi-combat.workspace = true
-tuigotchi-items.workspace = true
 rand.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

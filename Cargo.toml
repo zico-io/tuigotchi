@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/combat", "crates/tui"]
+members = ["crates/core", "crates/combat", "crates/items", "crates/tui"]
 resolver = "2"
 
 [workspace.package]
@@ -14,6 +14,7 @@ homepage = "https://github.com/zico-io/tuigotchi"
 [workspace.dependencies]
 tuigotchi-core = { path = "crates/core" }
 tuigotchi-combat = { path = "crates/combat" }
+tuigotchi-items = { path = "crates/items" }
 rand = "0.8"
 ratatui = "0.29"
 crossterm = "0.28"
