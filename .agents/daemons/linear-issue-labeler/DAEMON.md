@@ -22,6 +22,8 @@ Read `references/label-taxonomy.md` before deciding labels.
 
 If the taxonomy is missing, stale, contradictory, or does not mention a required label family, no-op and ask for taxonomy clarification.
 
+For this repository, the taxonomy is currently provisional and must run in proposal-only mode until a human confirms the Linear workspace labels.
+
 ## Scope
 
 Default scope:
@@ -37,9 +39,12 @@ Do not scan the entire workspace unless the daemon file is intentionally updated
 Add a missing label when:
 
 - the label family is required by the taxonomy
+- the label is explicitly listed in the taxonomy auto-add allowlist
 - exactly one label in that family is supported by issue evidence
 - the label is current, not deprecated
 - applying it does not conflict with existing labels
+
+Current repository adaptation: the provisional taxonomy sets the auto-add allowlist to `none`, so this daemon should not auto-add labels yet.
 
 Post a repair proposal instead of mutating when:
 
@@ -47,6 +52,7 @@ Post a repair proposal instead of mutating when:
 - an issue has deprecated labels
 - existing labels conflict with the taxonomy
 - the issue body or title does not provide enough context
+- taxonomy policy disables automatic label additions
 
 ## Repair proposal format
 
@@ -55,17 +61,17 @@ Use one concise issue comment:
 ```md
 Label repair needed
 
-Recommended labels: <labels>
-Reason: <short rationale>
-Blocked because: <specific uncertainty or conflict>
+Recommended labels: [label-1, label-2]
+Reason: [short rationale]
+Blocked because: [specific uncertainty or conflict]
 ```
 
 ## Limits
 
 - Max issues inspected per run: 100 recently changed issues
-- Max issues mutated per run: 30
+- Max issues mutated per run: 0 while taxonomy remains provisional
 - Max repair proposal comments per run: 10
-- Max labels added per issue per run: 5
+- Max labels added per issue per run: 0 while taxonomy remains provisional
 
 ## Idempotency
 
@@ -77,6 +83,7 @@ Use a conflict signature based on issue ID, current label set, title/body hash, 
 
 - the label taxonomy cannot be read
 - the taxonomy does not define required label families
+- the taxonomy is provisional and the auto-add allowlist is still empty
 - Linear issue data is incomplete
 - no recently changed in-scope issues need labels
 - the correct label cannot be selected with high confidence

@@ -20,7 +20,7 @@ schedule: "0 15 * * 1-5"
 
 Use this repository-specific value:
 
-- Slack channel: `<slack_channel_name>`
+- Slack channel: `#github` (provisional; verify this channel exists in the workspace before enabling posts)
 
 ## Scope
 
@@ -58,11 +58,19 @@ If no item meets the signal threshold, no-op silently.
 
 No-op silently when there has been no repository activity since the previous scheduled run.
 
+## Duplicate-post detection strategy
+
+Before posting, search `#github` for a message from this daemon that starts with the deterministic header `GitHub Activity Digest — YYYY-MM-DD UTC` for today's UTC date.
+
+If a same-date digest header already exists, treat it as a duplicate and no-op silently.
+
+If message history cannot be read reliably enough to confirm uniqueness, no-op conservatively and retry at the next scheduled run.
+
 ## Output format
 
 Use `references/digest-template.md`.
 
-Format the Slack message with Slack `mrkdwn`, not standard Markdown. Use Slack link syntax (`<url|label>`), bold section labels with `*text*`, and plain hyphen bullets. Do not use Markdown headings, Markdown links (`[label](url)`), tables, nested lists, or code fences in the final Slack message.
+Format the Slack message with Slack `mrkdwn`, not standard Markdown. Use Slack link syntax (for example, `<https://github.com/zico-io/tuigotchi/pull/10|PR #10>`), bold section labels with `*text*`, and plain hyphen bullets. Do not use Markdown headings, Markdown links (`[label](url)`), tables, nested lists, or code fences in the final Slack message.
 
 Limits:
 

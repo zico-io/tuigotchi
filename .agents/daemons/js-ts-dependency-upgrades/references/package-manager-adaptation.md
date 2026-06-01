@@ -1,60 +1,28 @@
-# Package manager configuration
+# Package manager configuration for `tuigotchi`
 
-Use repository evidence to replace the `DAEMON.md` configuration placeholders before enabling the daemon. Keep the runtime daemon focused on the configured commands rather than package-manager auto-detection.
+## Current repository status
 
-## Lockfile hints
+At adaptation time (2026-06-01), this repository has no JavaScript/TypeScript package manifests or lockfiles.
 
-| Evidence                  | Package manager |
-| ------------------------- | --------------- |
-| `pnpm-lock.yaml`          | pnpm            |
-| `yarn.lock`               | Yarn            |
-| `package-lock.json`       | npm             |
-| `bun.lock` or `bun.lockb` | Bun             |
+Confirmed absent in repo tree:
 
-If multiple lockfiles exist, inspect recent commits and package scripts before choosing the configuration. If still ambiguous, stop and ask a human.
+- `package.json`
+- `pnpm-lock.yaml`
+- `yarn.lock`
+- `package-lock.json`
+- `bun.lock` / `bun.lockb`
 
-## Configuration examples
+Because no JS/TS package exists yet, `js-ts-dependency-upgrades/DAEMON.md` is intentionally configured with `N/A` commands and must no-op.
 
-These examples are starting points. Replace them with repository-specific commands and only use commands that preserve the daemon's patch/minor policy. Do not use `@latest` or major-version update flags unless the daemon policy is explicitly expanded.
+## Activation guidance (only after JS/TS is added)
 
-pnpm:
+When a JS/TS package is introduced, update `DAEMON.md` with concrete commands from the chosen package manager and remove the `N/A` values.
 
-```bash
-<outdated-command> = pnpm outdated
-<runtime-update-command> = pnpm update <runtime-package>
-<development-update-command> = pnpm update <dev-package> --dev
-<install-command> = pnpm install --lockfile-only
-<verification-command> = pnpm test
-```
+Suggested command shapes (replace sample package names with real repo dependencies):
 
-npm:
+- pnpm: `pnpm outdated`, `pnpm update react`, `pnpm update typescript --dev`, `pnpm install --lockfile-only`, `pnpm test`
+- npm: `npm outdated`, `npm update react`, `npm update typescript --save-dev`, `npm install --package-lock-only`, `npm test`
+- Yarn: `yarn outdated`, `yarn up react`, `yarn up typescript`, `yarn install`, `yarn test`
+- Bun: `bun outdated`, `bun update react`, `bun update typescript`, `bun install`, `bun test`
 
-```bash
-<outdated-command> = npm outdated
-<runtime-update-command> = npm update <runtime-package>
-<development-update-command> = npm update <dev-package> --save-dev
-<install-command> = npm install --package-lock-only
-<verification-command> = npm test
-```
-
-Yarn:
-
-```bash
-<outdated-command> = yarn outdated
-<runtime-update-command> = yarn up <runtime-package>
-<development-update-command> = yarn up <dev-package>
-<install-command> = yarn install
-<verification-command> = yarn test
-```
-
-Bun:
-
-```bash
-<outdated-command> = bun outdated
-<runtime-update-command> = bun update <runtime-package>
-<development-update-command> = bun update <dev-package>
-<install-command> = bun install
-<verification-command> = bun test
-```
-
-Use the repository's own scripts when they are clearer than generic examples.
+Do not enable the daemon until the repository has both a manifest and lockfile that match the selected package manager.

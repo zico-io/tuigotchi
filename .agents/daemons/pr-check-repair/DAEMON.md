@@ -35,20 +35,30 @@ Fix and push when the triggering check is current, the cause is clear from avail
 
 Stop/no-op and comment with the blocking reason when the fix requires human judgment, external environment/config/secrets changes, dependency substitution or security review, production data/backfill decisions, or unavailable permissions/tooling.
 
+## Current repository CI expectations (best-effort)
+
+Based on `.github/workflows` at adaptation time, the primary PR checks to repair are:
+
+- `CI` matrix jobs (`Linux`, `macOS`) covering `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and `cargo build --workspace --release`
+- `conventional-commits / Validate PR title`
+- `conventional-commits / Validate commit subjects`
+
+Prioritize these checks when classifying failures and choosing fixes.
+
 ## Repair categories
 
 | Category                                                                                                | Posture                                                                                            |
 | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Formatting, lint, typecheck, snapshots, generated fixtures, and lockfile drift                          | Fix and push.                                                                                      |
-| Failing unit/integration tests where PR intent or documented behavior makes the expected behavior clear | Fix implementation or update tests, then push.                                                     |
-| E2E failures with clear evidence from traces, logs, repo behavior, or changed stable selectors          | Fix app code or tests, then push.                                                                  |
-| CI/workflow syntax errors introduced by the PR                                                          | Fix and push.                                                                                      |
-| Simple generated/schema migrations needed by a clear schema/model change                                | Generate or add them and push when the devbox has the required tooling and permissions.            |
-| Flaky checks with strong flake evidence                                                                 | Rerun once when no repo change is needed, or push the narrowest stabilizing fix when one is clear. |
-| Ambiguous product intent, conflicting requirements, or unclear PR direction                             | Stop/no-op; comment if human action is needed.                                                     |
-| Secrets, provider config, CI project settings, or external service failures outside the repo            | Stop/no-op; comment if human action is needed.                                                     |
-| Dependency replacement or vulnerability/security choices                                                | Stop/no-op; comment if human action is needed.                                                     |
-| Production data migrations, backfills, or data-shape decisions                                          | Stop/no-op; comment if human action is needed.                                                     |
+| Rust formatting and lint failures (`cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`) | Fix and push. |
+| Rust test or build failures (`cargo test --workspace`, `cargo build --workspace --release`) where intended behavior is clear | Fix implementation/tests with minimal scope, then push. |
+| Conventional commit validation failures (PR title or commit subject format)                             | Fix commit messages/PR title when permissions allow; otherwise stop/no-op and comment with the exact required format. |
+| CI/workflow YAML syntax or job wiring errors introduced by the PR                                        | Fix and push. |
+| Flaky Linux/macOS CI failures with strong evidence and no deterministic repo bug                         | Rerun once when no repo change is needed, or push the narrowest stabilizing fix when one is clear. |
+| Check families not currently part of repo workflows (for example JS lockfile churn, schema migrations, external provider outages) | Stop/no-op; comment if human action is needed. |
+| Ambiguous product intent, conflicting requirements, or unclear PR direction                              | Stop/no-op; comment if human action is needed. |
+| Secrets, provider config, CI project settings, or external service failures outside the repo             | Stop/no-op; comment if human action is needed. |
+| Dependency replacement or vulnerability/security choices                                                 | Stop/no-op; comment if human action is needed. |
+| Production data migrations, backfills, or data-shape decisions                                           | Stop/no-op; comment if human action is needed. |
 
 ## Branch and concurrency safety
 

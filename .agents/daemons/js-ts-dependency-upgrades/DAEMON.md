@@ -21,19 +21,21 @@ schedule: '0 8 * * 1'
 
 Use these repository-specific values:
 
-- Package manager: `<package-manager>`
-- Dependency manifests: `<manifest-globs>`
-- Lockfile: `<lockfile-path>`
-- Outdated scan: `<outdated-command>`
-- Runtime dependency update: `<runtime-update-command>`
-- Development dependency update: `<development-update-command>`
-- Install or lockfile refresh: `<install-command>`
+- Package manager: `N/A` (no JavaScript/TypeScript package manifest or lockfile exists in this repository today)
+- Dependency manifests: `N/A` (none detected; enable once a `package.json` is introduced)
+- Lockfile: `N/A` (none detected)
+- Outdated scan: `N/A` while no JS/TS package exists
+- Runtime dependency update: `N/A` while no JS/TS package exists
+- Development dependency update: `N/A` while no JS/TS package exists
+- Install or lockfile refresh: `N/A` while no JS/TS package exists
 - Verification:
-  - `<verification-command>`
+  - `N/A` while no JS/TS package exists
 - Runtime dependency branch: `daemon/deps-runtime-minor-patch`
 - Development dependency branch: `daemon/deps-dev-minor-patch`
-- Runtime dependency title: `deps: update runtime dependencies`
-- Development dependency title: `deps(dev): update development dependencies`
+- Runtime dependency title: `chore(deps): update runtime dependencies`
+- Development dependency title: `chore(deps-dev): update development dependencies`
+- Runtime dependency labels: `none` (no repository-specific dependency label convention detected)
+- Development dependency labels: `none` (no repository-specific dependency label convention detected)
 
 ## Update policy
 
@@ -56,6 +58,8 @@ Create or update at most two pull requests per run:
 2. development dependency patch/minor updates
 
 Use the configured branch and title for each dependency bucket.
+
+Do not apply labels unless maintainers add and document a dedicated dependency label convention for this repository.
 
 Each PR body must include:
 
@@ -87,6 +91,7 @@ If verification fails and the fix is not a small dependency-related adjustment, 
 ## No-op when
 
 - no patch or minor upgrades are available
+- no JavaScript/TypeScript manifests and lockfiles exist yet in the repository
 - any configuration placeholder remains unresolved
 - verification cannot be run safely
 - an existing human-owned dependency upgrade is already active for the same dependency bucket
